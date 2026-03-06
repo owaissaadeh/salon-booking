@@ -126,21 +126,22 @@ export default function PermissionsPage() {
                 {ALL_PAGES.map(page => {
                   const enabled = rolePerms.includes(page.key);
                   return (
-                    <button
+                    <div
                       key={page.key}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => toggle(role.key, page.key)}
-                      className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all text-right ${
+                      onKeyDown={e => e.key === "Enter" && toggle(role.key, page.key)}
+                      className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all text-right cursor-pointer select-none ${
                         enabled ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/30"
                       }`}
                       data-testid={`toggle-${role.key}-${page.key}`}
                     >
                       <span className="text-sm font-medium">{page.label}</span>
-                      <Switch
-                        checked={enabled}
-                        onCheckedChange={() => toggle(role.key, page.key)}
-                        className="pointer-events-none scale-75"
-                      />
-                    </button>
+                      <div style={{ direction: "ltr" }} className={`w-9 h-5 rounded-full transition-colors flex-shrink-0 flex items-center px-0.5 ${enabled ? "bg-primary" : "bg-muted"}`}>
+                        <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
+                      </div>
+                    </div>
                   );
                 })}
               </div>

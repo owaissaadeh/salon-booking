@@ -125,7 +125,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div style={{ direction: "rtl" }}>
       <SidebarProvider>
-        <AppSidebar />
         <SidebarInset>
           <header className="flex items-center gap-3 p-3 border-b bg-background sticky top-0 z-30 h-14">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
@@ -138,6 +137,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             {children}
           </main>
         </SidebarInset>
+        <AppSidebar />
       </SidebarProvider>
     </div>
   );
