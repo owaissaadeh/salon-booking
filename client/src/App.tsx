@@ -19,6 +19,7 @@ import GalleryPage from "@/pages/admin/gallery-page";
 import StaffPage from "@/pages/admin/staff";
 import BarberProfilePage from "@/pages/admin/barber-profile";
 import SettingsPage from "@/pages/admin/settings";
+import PermissionsPage from "@/pages/admin/permissions";
 import { useAuth } from "@/lib/auth";
 import { useEffect } from "react";
 
@@ -97,6 +98,7 @@ function Router() {
       <Route path="/admin/gallery">{() => <AdminRoute component={GalleryPage} />}</Route>
       <Route path="/admin/staff">{() => <AdminRoute component={StaffPage} />}</Route>
       <Route path="/admin/settings">{() => <AdminRoute component={SettingsPage} />}</Route>
+      <Route path="/admin/permissions">{() => <AdminRoute component={PermissionsPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );
