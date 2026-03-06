@@ -16,7 +16,8 @@ export default function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/auth/login", form),
-    onSuccess: async (data) => {
+    onSuccess: async (res) => {
+      const data = await res.json();
       queryClient.setQueryData(["/api/auth/me"], data);
       setLocation("/admin");
     },

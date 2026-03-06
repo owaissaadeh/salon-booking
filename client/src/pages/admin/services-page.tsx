@@ -9,25 +9,49 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Service } from "@shared/schema";
-import { Plus, Pencil, Trash2, Scissors, Clock } from "lucide-react";
+import { Plus, Pencil, Trash2, Scissors, Clock, Users, Hash } from "lucide-react";
 
 export default function ServicesPage() {
   const { toast } = useToast();
   const { data: services = [] } = useQuery<Service[]>({ queryKey: ["/api/services"] });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
-  const [form, setForm] = useState({ name: "", nameAr: "", duration: "30", price: "0", active: true });
+  const [form, setForm] = useState({
+    name: "", nameAr: "", duration: "30", price: "0",
+    active: true, requiresBarber: false, maxConcurrent: "1"
+  });
 
-  const openAdd = () => { setEditing(null); setForm({ name: "", nameAr: "", duration: "30", price: "0", active: true }); setDialogOpen(true); };
-  const openEdit = (s: Service) => { setEditing(s); setForm({ name: s.name, nameAr: s.nameAr, duration: s.duration.toString(), price: s.price.toString(), active: s.active }); setDialogOpen(true); };
+  const openAdd = () => {
+    setEditing(null);
+    setForm({ name: "", nameAr: "", duration: "30", price: "0", active: true, requiresBarber: false, maxConcurrent: "1" });
+    setDialogOpen(true);
+  };
+  const openEdit = (s: Service) => {
+    setEditing(s);
+    setForm({
+      name: s.name, nameAr: s.nameAr, duration: s.duration.toString(),
+      price: s.price.toString(), active: s.active,
+      requiresBarber: s.requiresBarber, maxConcurrent: s.maxConcurrent.toString()
+    });
+    setDialogOpen(true);
+  };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const body = { name: form.name, nameAr: form.nameAr, duration: parseInt(form.duration), price: parseFloat(form.price), active: form.active };
+      const body = {
+        name: form.name, nameAr: form.nameAr,
+        duration: parseInt(form.duration), price: parseFloat(form.price),
+        active: form.active, requiresBarber: form.requiresBarber,
+        maxConcurrent: parseInt(form.maxConcurrent) || 1,
+      };
       if (editing) await apiRequest("PATCH", `/api/services/${editing.id}`, body);
       else await apiRequest("POST", "/api/services", body);
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/services"] }); setDialogOpen(false); toast({ title: editing ? "تم تحديث الخدمة" : "تمت إضافة الخدمة" }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/services"] });
+      setDialogOpen(false);
+      toast({ title: editing ? "تم تحديث الخدمة" : "تمت إضافة الخدمة" });
+    },
     onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
 
@@ -56,14 +80,18 @@ export default function ServicesPage() {
             </div>
             <h3 className="font-bold text-lg">{s.nameAr}</h3>
             <p className="text-xs text-muted-foreground mb-2">{s.name}</p>
-            <div className="flex items-center gap-1 text-sm text-muted-foreground mb-2">
-              <Clock className="w-3.5 h-3.5" />
-              <span>{s.duration} دقيقة</span>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground mb-2 flex-wrap">
+              <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{s.duration} دقيقة</span>
+              {s.requiresBarber
+                ? <span className="flex items-center gap-1 text-primary text-xs font-medium"><Users className="w-3.5 h-3.5" />يتطلب حلاق</span>
+                : <span className="flex items-center gap-1 text-xs"><Hash className="w-3.5 h-3.5" />حد {s.maxConcurrent} متزامن</span>
+              }
             </div>
             <p className="text-xl font-black text-primary">{s.price} دينار</p>
           </Card>
         ))}
       </div>
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>{editing ? "تعديل الخدمة" : "إضافة خدمة جديدة"}</DialogTitle></DialogHeader>
@@ -74,6 +102,25 @@ export default function ServicesPage() {
               <div><Label>المدة (دقيقة)</Label><Input type="number" value={form.duration} onChange={e => setForm(p => ({ ...p, duration: e.target.value }))} data-testid="input-service-duration" /></div>
               <div><Label>السعر (دينار)</Label><Input type="number" value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} data-testid="input-service-price" /></div>
             </div>
+
+            <div className="border rounded-lg p-4 space-y-3">
+              <p className="text-sm font-semibold text-muted-foreground">إعدادات الحجز</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">يتطلب اختيار حلاق</Label>
+                  <p className="text-xs text-muted-foreground">كحلاقة الشعر</p>
+                </div>
+                <Switch checked={form.requiresBarber} onCheckedChange={v => setForm(p => ({ ...p, requiresBarber: v }))} data-testid="switch-requires-barber" />
+              </div>
+              {!form.requiresBarber && (
+                <div>
+                  <Label>الحد الأقصى للحجوزات المتزامنة</Label>
+                  <p className="text-xs text-muted-foreground mb-1">كغرفة برايفت: حجز واحد في نفس الوقت</p>
+                  <Input type="number" min="1" value={form.maxConcurrent} onChange={e => setForm(p => ({ ...p, maxConcurrent: e.target.value }))} data-testid="input-max-concurrent" />
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center gap-2">
               <Switch checked={form.active} onCheckedChange={v => setForm(p => ({ ...p, active: v }))} data-testid="switch-service-active" />
               <Label>نشط</Label>

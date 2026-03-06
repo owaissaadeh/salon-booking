@@ -129,8 +129,6 @@ export async function registerRoutes(
 
     const existingBookings = await storage.getBookingsByDate(date as string);
     const activeBookings = existingBookings.filter(b => b.status !== "cancelled");
-    const allBarbers = await storage.getBarbers();
-    const activeBarbers = allBarbers.filter(b => b.active);
     const selectedBarberId = barberId ? parseInt(barberId as string) : null;
 
     const startHour = 9;
@@ -145,31 +143,28 @@ export async function registerRoutes(
         if (slotEnd > endHour * 60) continue;
 
         let available = false;
-        if (selectedBarberId) {
-          const conflict = activeBookings.some(b => {
-            if (b.barberId && b.barberId !== selectedBarberId) return false;
-            const bService = allServices.find(s => s.id === b.serviceId);
-            const bDuration = bService?.duration || 30;
-            const [bh, bm] = b.time.split(":").map(Number);
-            const bStart = bh * 60 + bm;
-            const bEnd = bStart + bDuration;
-            return slotStart < bEnd && slotEnd > bStart;
-          });
-          available = !conflict;
+
+        const overlaps = (b: typeof activeBookings[0]) => {
+          const bService = allServices.find(s => s.id === b.serviceId);
+          const bDuration = bService?.duration || 30;
+          const [bh, bm] = b.time.split(":").map(Number);
+          const bStart = bh * 60 + bm;
+          const bEnd = bStart + bDuration;
+          return slotStart < bEnd && slotEnd > bStart;
+        };
+
+        if (service.requiresBarber) {
+          if (selectedBarberId) {
+            const conflict = activeBookings.some(b => b.barberId === selectedBarberId && overlaps(b));
+            available = !conflict;
+          } else {
+            available = false;
+          }
         } else {
-          available = activeBarbers.some(barber => {
-            const conflict = activeBookings.some(b => {
-              if (b.barberId && b.barberId !== barber.id) return false;
-              const bService = allServices.find(s => s.id === b.serviceId);
-              const bDuration = bService?.duration || 30;
-              const [bh, bm] = b.time.split(":").map(Number);
-              const bStart = bh * 60 + bm;
-              const bEnd = bStart + bDuration;
-              return slotStart < bEnd && slotEnd > bStart;
-            });
-            return !conflict;
-          });
+          const concurrentCount = activeBookings.filter(b => b.serviceId === service.id && overlaps(b)).length;
+          available = concurrentCount < service.maxConcurrent;
         }
+
         allSlots.push({ time: timeStr, available });
       }
     }

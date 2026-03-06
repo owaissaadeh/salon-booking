@@ -9,6 +9,8 @@ export const services = pgTable("services", {
   duration: integer("duration").notNull(),
   price: real("price").notNull(),
   active: boolean("active").notNull().default(true),
+  requiresBarber: boolean("requires_barber").notNull().default(false),
+  maxConcurrent: integer("max_concurrent").notNull().default(1),
 });
 
 export const barbers = pgTable("barbers", {

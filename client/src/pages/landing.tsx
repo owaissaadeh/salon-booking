@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Scissors, Clock, Phone, MapPin, Star, ChevronDown, Menu, X, ChevronRight, ChevronLeft, Check, Instagram, Twitter, Facebook, MessageCircle } from "lucide-react";
-import type { Service } from "@shared/schema";
+import { Scissors, Clock, Phone, MapPin, Star, ChevronDown, Menu, X, ChevronRight, ChevronLeft, Check, Instagram, Twitter, Facebook, MessageCircle, User } from "lucide-react";
+import type { Service, Barber } from "@shared/schema";
 
 const GOLD = "#c09748";
 const GOLD_LIGHT = "#d4af6a";
@@ -203,13 +203,18 @@ function ServicesSection() {
   );
 }
 
+type BookingPhase = "service" | "barber" | "schedule" | "details";
+
 function BookingSection() {
   const { toast } = useToast();
   const { data: services = [] } = useQuery<Service[]>({ queryKey: ["/api/services"] });
-  const active = services.filter(s => s.active);
+  const { data: barbers = [] } = useQuery<Barber[]>({ queryKey: ["/api/barbers"] });
+  const activeServices = services.filter(s => s.active);
+  const activeBarbers = barbers.filter(b => b.active);
 
-  const [step, setStep] = useState(1);
+  const [phase, setPhase] = useState<BookingPhase>("service");
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [slots, setSlots] = useState<SlotInfo[]>([]);
@@ -218,47 +223,97 @@ function BookingSection() {
   const [form, setForm] = useState({ visitorName: "", phone: "" });
 
   const weekDays = getWeekDays(weekBase);
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
 
-  const fetchSlots = async (svc: Service, date: Date) => {
+  const phases: BookingPhase[] = selectedService?.requiresBarber
+    ? ["service", "barber", "schedule", "details"]
+    : ["service", "schedule", "details"];
+
+  const phaseLabels: Record<BookingPhase, string> = {
+    service: "اختر الخدمة",
+    barber: "اختر الحلاق",
+    schedule: "اختر الموعد",
+    details: "بياناتك",
+  };
+
+  const currentStep = phases.indexOf(phase) + 1;
+  const totalSteps = phases.length;
+
+  const fetchSlots = async (svc: Service, date: Date, barber: Barber | null) => {
     setLoadingSlots(true); setSlots([]); setSelectedTime(null);
     const dateStr = date.toISOString().split("T")[0];
+    let url = `/api/bookings/available-slots?serviceId=${svc.id}&date=${dateStr}`;
+    if (svc.requiresBarber && barber) url += `&barberId=${barber.id}`;
     try {
-      const res = await fetch(`/api/bookings/available-slots?serviceId=${svc.id}&date=${dateStr}`);
+      const res = await fetch(url);
       setSlots(await res.json());
     } catch { setSlots([]); }
     setLoadingSlots(false);
   };
 
-  const handleSelectDate = (date: Date) => {
-    if (date < today) return;
-    setSelectedDate(date); setSelectedTime(null);
-    if (selectedService) fetchSlots(selectedService, date);
+  const handleSelectService = (svc: Service) => {
+    setSelectedService(svc);
+    setSelectedBarber(null);
+    setSelectedDate(null);
+    setSelectedTime(null);
+    setSlots([]);
+    setPhase(svc.requiresBarber ? "barber" : "schedule");
   };
 
-  const handleSelectService = (svc: Service) => {
-    setSelectedService(svc); setSelectedDate(null); setSelectedTime(null); setSlots([]); setStep(2);
+  const handleSelectBarber = (barber: Barber) => {
+    setSelectedBarber(barber);
+    setSelectedDate(null);
+    setSelectedTime(null);
+    setSlots([]);
+    setPhase("schedule");
+  };
+
+  const handleSelectDate = (date: Date) => {
+    if (date < today) return;
+    setSelectedDate(date);
+    setSelectedTime(null);
+    if (selectedService) fetchSlots(selectedService, date, selectedBarber);
+  };
+
+  const resetAll = () => {
+    setPhase("service");
+    setSelectedService(null);
+    setSelectedBarber(null);
+    setSelectedDate(null);
+    setSelectedTime(null);
+    setSlots([]);
+    setForm({ visitorName: "", phone: "" });
   };
 
   const bookMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/bookings", {
-        visitorName: form.visitorName, phone: form.phone,
-        serviceId: selectedService!.id, date: selectedDate!.toISOString().split("T")[0],
-        time: selectedTime!, status: "pending",
-      });
+      const body: Record<string, unknown> = {
+        visitorName: form.visitorName,
+        phone: form.phone,
+        serviceId: selectedService!.id,
+        date: selectedDate!.toISOString().split("T")[0],
+        time: selectedTime!,
+        status: "pending",
+      };
+      if (selectedService?.requiresBarber && selectedBarber) {
+        body.barberId = selectedBarber.id;
+      }
+      await apiRequest("POST", "/api/bookings", body);
     },
     onSuccess: () => {
       toast({ title: "تم الحجز بنجاح!", description: "سيتواصل معك فريقنا لتأكيد الموعد" });
-      setStep(1); setSelectedService(null); setSelectedDate(null); setSelectedTime(null); setSlots([]);
-      setForm({ visitorName: "", phone: "" });
+      resetAll();
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
     },
     onError: (err: Error) => toast({ title: "فشل الحجز", description: err.message, variant: "destructive" }),
   });
 
-  const stepLabels = ["اختر الخدمة", "اختر الموعد", "بياناتك"];
   const goldBorderStyle = { borderColor: `rgba(192,151,72,0.15)`, background: "rgba(255,255,255,0.02)" };
+  const backBtn = (label: string, onClick: () => void) => (
+    <button onClick={onClick} className="flex items-center gap-1 text-xs font-medium" style={{ color: "rgba(255,255,255,0.3)" }}>
+      <ChevronRight className="w-3.5 h-3.5" /> {label}
+    </button>
+  );
 
   return (
     <section id="booking" className="py-28 px-5" style={{ background: BLACK, scrollMarginTop: "4rem" }}>
@@ -266,32 +321,33 @@ function BookingSection() {
         <div className="text-center mb-14">
           <p className="text-xs font-bold tracking-[0.4em] uppercase mb-5" style={{ color: GOLD }}>— الحجز الإلكتروني —</p>
           <h2 className="text-3xl md:text-5xl font-black text-white mb-4">احجز موعدك</h2>
-          <p className="text-white/30 text-sm">ثلاث خطوات بسيطة لحجز موعدك</p>
+          <p className="text-white/30 text-sm">{totalSteps === 4 ? "أربع خطوات بسيطة لحجز موعدك" : "ثلاث خطوات بسيطة لحجز موعدك"}</p>
         </div>
 
-        <div className="flex items-center justify-center gap-2 mb-10">
-          {stepLabels.map((label, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all`}
+        <div className="flex items-center justify-center gap-2 mb-10 flex-wrap">
+          {phases.map((p, i) => (
+            <div key={p} className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all"
                 style={{
-                  background: step === i+1 ? `linear-gradient(135deg, ${GOLD}, ${GOLD_LIGHT})` :
-                    step > i+1 ? "rgba(192,151,72,0.15)" : "rgba(255,255,255,0.05)",
-                  color: step === i+1 ? "#000" : step > i+1 ? GOLD : "rgba(255,255,255,0.3)"
+                  background: currentStep === i + 1 ? `linear-gradient(135deg, ${GOLD}, ${GOLD_LIGHT})` :
+                    currentStep > i + 1 ? "rgba(192,151,72,0.15)" : "rgba(255,255,255,0.05)",
+                  color: currentStep === i + 1 ? "#000" : currentStep > i + 1 ? GOLD : "rgba(255,255,255,0.3)"
                 }}>
-                {step > i+1 ? <Check className="w-3 h-3" /> : <span>{i+1}</span>}
-                <span className="hidden sm:block">{label}</span>
+                {currentStep > i + 1 ? <Check className="w-3 h-3" /> : <span>{i + 1}</span>}
+                <span className="hidden sm:block">{phaseLabels[p]}</span>
               </div>
-              {i < 2 && <div className="w-6 h-px" style={{ background: "rgba(192,151,72,0.2)" }} />}
+              {i < phases.length - 1 && <div className="w-6 h-px" style={{ background: "rgba(192,151,72,0.2)" }} />}
             </div>
           ))}
         </div>
 
         <div className="rounded-2xl border p-6 md:p-8" style={goldBorderStyle}>
-          {step === 1 && (
+
+          {phase === "service" && (
             <div>
               <p className="text-white/30 text-center mb-6 text-sm">اضغط على الخدمة التي تريدها</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {active.map((svc, idx) => {
+                {activeServices.map((svc, idx) => {
                   const Icon = SERVICE_ICONS[idx % SERVICE_ICONS.length];
                   return (
                     <button key={svc.id} onClick={() => handleSelectService(svc)}
@@ -313,26 +369,58 @@ function BookingSection() {
             </div>
           )}
 
-          {step === 2 && (
+          {phase === "barber" && (
             <div>
               <div className="flex items-center gap-3 mb-6">
-                <button onClick={() => { setStep(1); setSelectedDate(null); setSlots([]); }}
-                  className="flex items-center gap-1 text-xs font-medium" style={{ color: "rgba(255,255,255,0.3)" }}>
-                  <ChevronRight className="w-3.5 h-3.5" /> تغيير
-                </button>
+                {backBtn("تغيير الخدمة", () => setPhase("service"))}
                 <div className="flex-1 h-px" style={{ background: "rgba(192,151,72,0.1)" }} />
                 <span className="text-xs font-bold" style={{ color: GOLD }}>{selectedService?.nameAr}</span>
+              </div>
+              <p className="text-white/30 text-center mb-6 text-sm">اختر الحلاق المفضل لديك</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {activeBarbers.map(barber => (
+                  <button key={barber.id} onClick={() => handleSelectBarber(barber)}
+                    className="p-5 rounded-xl text-center transition-all duration-200"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(192,151,72,0.1)" }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = `rgba(192,151,72,0.5)`; (e.currentTarget as HTMLElement).style.background = "rgba(192,151,72,0.06)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(192,151,72,0.1)"; (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)"; }}
+                    data-testid={`button-book-barber-${barber.id}`}>
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"
+                      style={{ background: "rgba(192,151,72,0.12)", border: `1px solid rgba(192,151,72,0.25)` }}>
+                      <User className="w-5 h-5" style={{ color: GOLD }} />
+                    </div>
+                    <p className="font-bold text-white text-sm">{barber.name}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {phase === "schedule" && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                {backBtn("تغيير", () => setPhase(selectedService?.requiresBarber ? "barber" : "service"))}
+                <div className="flex-1 h-px" style={{ background: "rgba(192,151,72,0.1)" }} />
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-bold" style={{ color: GOLD }}>{selectedService?.nameAr}</span>
+                  {selectedBarber && (
+                    <>
+                      <span style={{ color: "rgba(255,255,255,0.2)" }}>•</span>
+                      <span style={{ color: "rgba(255,255,255,0.5)" }}>{selectedBarber.name}</span>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
-                  <button onClick={() => { const d = new Date(weekBase); d.setDate(d.getDate()-7); setWeekBase(d); }}>
+                  <button onClick={() => { const d = new Date(weekBase); d.setDate(d.getDate() - 7); setWeekBase(d); }}>
                     <ChevronRight className="w-4 h-4" style={{ color: "rgba(255,255,255,0.3)" }} />
                   </button>
                   <span className="text-white text-sm font-bold">
                     {MONTHS_AR[weekDays[0].getMonth()]} {weekDays[0].getFullYear()}
                   </span>
-                  <button onClick={() => { const d = new Date(weekBase); d.setDate(d.getDate()+7); setWeekBase(d); }}>
+                  <button onClick={() => { const d = new Date(weekBase); d.setDate(d.getDate() + 7); setWeekBase(d); }}>
                     <ChevronLeft className="w-4 h-4" style={{ color: "rgba(255,255,255,0.3)" }} />
                   </button>
                 </div>
@@ -350,7 +438,7 @@ function BookingSection() {
                           border: `1px solid ${isSelected ? "transparent" : "rgba(255,255,255,0.05)"}`,
                         }}
                         data-testid={`button-day-${i}`}>
-                        <div className="font-medium mb-1">{DAYS_AR[day.getDay()].slice(0,3)}</div>
+                        <div className="font-medium mb-1">{DAYS_AR[day.getDay()].slice(0, 3)}</div>
                         <div className="font-black text-base">{day.getDate()}</div>
                       </button>
                     );
@@ -369,7 +457,7 @@ function BookingSection() {
                     <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 gap-2">
                       {slots.map(slot => (
                         <button key={slot.time} disabled={!slot.available}
-                          onClick={() => { if (slot.available) { setSelectedTime(slot.time); setStep(3); } }}
+                          onClick={() => { if (slot.available) { setSelectedTime(slot.time); setPhase("details"); } }}
                           className="py-2.5 px-1 rounded-lg text-xs font-bold text-center transition-all"
                           style={{
                             background: !slot.available ? "rgba(255,255,255,0.02)" :
@@ -394,15 +482,14 @@ function BookingSection() {
             </div>
           )}
 
-          {step === 3 && (
+          {phase === "details" && (
             <div>
               <div className="flex items-center gap-3 mb-6">
-                <button onClick={() => setStep(2)} className="flex items-center gap-1 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
-                  <ChevronRight className="w-3.5 h-3.5" /> تعديل
-                </button>
+                {backBtn("تعديل", () => setPhase("schedule"))}
                 <div className="flex-1 h-px" style={{ background: "rgba(192,151,72,0.1)" }} />
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-xs flex-wrap justify-end">
                   <span className="font-bold" style={{ color: GOLD }}>{selectedService?.nameAr}</span>
+                  {selectedBarber && <><span style={{ color: "rgba(255,255,255,0.2)" }}>•</span><span style={{ color: "rgba(255,255,255,0.5)" }}>{selectedBarber.name}</span></>}
                   <span style={{ color: "rgba(255,255,255,0.2)" }}>•</span>
                   <span style={{ color: "rgba(255,255,255,0.5)" }}>{selectedDate && `${selectedDate.getDate()} ${MONTHS_AR[selectedDate.getMonth()]}`}</span>
                   <span style={{ color: "rgba(255,255,255,0.2)" }}>•</span>
@@ -437,6 +524,7 @@ function BookingSection() {
               </div>
             </div>
           )}
+
         </div>
       </div>
     </section>
