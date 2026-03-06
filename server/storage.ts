@@ -30,7 +30,7 @@ export interface IStorage {
   updateBarber(id: number, b: Partial<InsertBarber>): Promise<Barber | undefined>;
   deleteBarber(id: number): Promise<void>;
 
-  getBookings(): Promise<(Booking & { serviceName: string })[]>;
+  getBookings(): Promise<(Booking & { serviceName: string; serviceNameAr: string; barberName: string | null })[]>;
   getBookingsByDate(date: string): Promise<Booking[]>;
   createBooking(b: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: number, status: string): Promise<void>;
@@ -55,6 +55,11 @@ export interface IStorage {
   getTransactionItemsByDateRange(from: string, to: string): Promise<(TransactionItem & { barberName: string; barberCommission: number })[]>;
   getTransactionProductsByDateRange(from: string, to: string): Promise<(TransactionProduct & { productName: string })[]>;
   getBarberTransactionItemsByDateRange(barberId: number, from: string, to: string): Promise<TransactionItem[]>;
+  getBarberDetailedTransactions(barberId: number, from: string, to: string): Promise<{
+    id: number; customerName: string | null; totalAmount: number; servicesTotal: number; productsTotal: number;
+    paymentMethod: string; createdAt: Date; commission: number; commissionEarned: number;
+    services: { serviceId: number; serviceName: string; serviceNameAr: string; price: number }[];
+  }[]>;
 
   getExpenses(): Promise<Expense[]>;
   getExpensesByDateRange(from: string, to: string): Promise<Expense[]>;
@@ -115,13 +120,14 @@ export class DatabaseStorage implements IStorage {
     await db.delete(barbers).where(eq(barbers.id, id));
   }
 
-  async getBookings(): Promise<(Booking & { serviceName: string })[]> {
+  async getBookings(): Promise<(Booking & { serviceName: string; serviceNameAr: string; barberName: string | null })[]> {
     const rows = await db
-      .select({ booking: bookings, serviceName: services.name })
+      .select({ booking: bookings, serviceName: services.name, serviceNameAr: services.nameAr, barberName: barbers.name })
       .from(bookings)
       .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(barbers, eq(bookings.barberId, barbers.id))
       .orderBy(desc(bookings.createdAt));
-    return rows.map(r => ({ ...r.booking, serviceName: r.serviceName || "غير محدد" }));
+    return rows.map(r => ({ ...r.booking, serviceName: r.serviceName || "غير محدد", serviceNameAr: r.serviceNameAr || "غير محدد", barberName: r.barberName || null }));
   }
   async getBookingsByDate(date: string): Promise<Booking[]> {
     return db.select().from(bookings).where(eq(bookings.date, date));
@@ -240,6 +246,41 @@ export class DatabaseStorage implements IStorage {
         lte(transactions.createdAt, new Date(to + "T23:59:59"))
       ));
     return rows.map(r => r.item);
+  }
+
+  async getBarberDetailedTransactions(barberId: number, from: string, to: string) {
+    const barber = await db.select().from(barbers).where(eq(barbers.id, barberId)).limit(1);
+    const commission = barber[0]?.commission ?? 0;
+
+    const txns = await db
+      .select()
+      .from(transactions)
+      .where(and(
+        eq(transactions.barberId, barberId),
+        gte(transactions.createdAt, new Date(from + "T00:00:00")),
+        lte(transactions.createdAt, new Date(to + "T23:59:59"))
+      ))
+      .orderBy(desc(transactions.createdAt));
+
+    const results = [];
+    for (const txn of txns) {
+      const itemRows = await db
+        .select({ item: transactionItems, serviceName: services.name, serviceNameAr: services.nameAr })
+        .from(transactionItems)
+        .leftJoin(services, eq(transactionItems.serviceId, services.id))
+        .where(eq(transactionItems.transactionId, txn.id));
+
+      const svcList = itemRows.map(r => ({
+        serviceId: r.item.serviceId,
+        serviceName: r.serviceName || "غير محدد",
+        serviceNameAr: r.serviceNameAr || "غير محدد",
+        price: r.item.price,
+      }));
+
+      const commissionEarned = (txn.servicesTotal * commission) / 100;
+      results.push({ ...txn, commission, commissionEarned, services: svcList });
+    }
+    return results;
   }
 
   async getExpenses(): Promise<Expense[]> {

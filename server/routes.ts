@@ -95,16 +95,15 @@ export async function registerRoutes(
     const barber = await storage.getBarberById(barberId);
     if (!barber) return res.status(404).json({ error: "غير موجود" });
 
-    const txns = await storage.getBarberTransactionsByDateRange(barberId, fromDate, toDate);
-    const items = await storage.getBarberTransactionItemsByDateRange(barberId, fromDate, toDate);
+    const detailedTxns = await storage.getBarberDetailedTransactions(barberId, fromDate, toDate);
     const withdrawals = await storage.getBarberWithdrawals(barberId);
 
-    const servicesRevenue = items.reduce((s, i) => s + i.price, 0);
+    const servicesRevenue = detailedTxns.reduce((s, t) => s + t.servicesTotal, 0);
     const commissionEarned = (servicesRevenue * barber.commission) / 100;
     const totalWithdrawn = withdrawals.reduce((s, w) => s + w.amount, 0);
     const balance = commissionEarned - totalWithdrawn;
 
-    res.json({ barber, fromDate, toDate, servicesRevenue, commissionEarned, totalWithdrawn, balance, transactionCount: txns.length, withdrawals });
+    res.json({ barber, fromDate, toDate, servicesRevenue, commissionEarned, totalWithdrawn, balance, transactionCount: detailedTxns.length, withdrawals, transactions: detailedTxns });
   });
 
   // WhatsApp notification via Callmebot

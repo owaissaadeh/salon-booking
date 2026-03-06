@@ -5,11 +5,32 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { BarberWithdrawal } from "@shared/schema";
-import { ArrowRight, DollarSign, Scissors, TrendingDown, Wallet, Plus, Trash2, User } from "lucide-react";
+import { ArrowRight, DollarSign, Scissors, TrendingDown, Wallet, Plus, Trash2, User, CreditCard, Banknote } from "lucide-react";
+
+interface ServiceRow {
+  serviceId: number;
+  serviceName: string;
+  serviceNameAr: string;
+  price: number;
+}
+
+interface DetailedTransaction {
+  id: number;
+  customerName: string | null;
+  totalAmount: number;
+  servicesTotal: number;
+  productsTotal: number;
+  paymentMethod: string;
+  createdAt: string;
+  commission: number;
+  commissionEarned: number;
+  services: ServiceRow[];
+}
 
 interface BarberProfile {
   barber: { id: number; name: string; commission: number; phone: string | null; notes: string | null };
@@ -21,6 +42,16 @@ interface BarberProfile {
   balance: number;
   transactionCount: number;
   withdrawals: BarberWithdrawal[];
+  transactions: DetailedTransaction[];
+}
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("ar-JO", { hour: "2-digit", minute: "2-digit", hour12: true });
+}
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("ar-JO", { year: "numeric", month: "short", day: "numeric" });
 }
 
 export default function BarberProfilePage() {
@@ -67,6 +98,7 @@ export default function BarberProfilePage() {
   if (!profile || !profile.barber) return <div className="text-center py-20">الحلاق غير موجود</div>;
 
   const { barber } = profile;
+  const txns = profile.transactions || [];
 
   const stats = [
     { label: "إيرادات الخدمات", value: profile.servicesRevenue, icon: Scissors, color: "text-chart-2", bg: "bg-chart-2/10" },
@@ -127,6 +159,96 @@ export default function BarberProfilePage() {
           <span className="font-semibold">{barber.phone}</span>
         </Card>
       )}
+
+      <div className="mb-6">
+        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Scissors className="w-5 h-5 text-primary" />
+          سجل الزبائن والخدمات
+          <Badge variant="secondary" className="text-xs font-normal mr-1">{txns.length} معاملة</Badge>
+        </h2>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  {["الزبون", "الخدمات", "إجمالي الخدمات", "عمولة الحلاق", "طريقة الدفع", "التاريخ والوقت"].map(h => (
+                    <th key={h} className="text-right p-3 font-semibold whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {txns.length ? txns.map(t => (
+                  <tr key={t.id} className="border-b last:border-0 hover:bg-muted/10 transition-colors" data-testid={`row-txn-${t.id}`}>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                          <User className="w-3.5 h-3.5 text-muted-foreground" />
+                        </div>
+                        <span className="font-medium">{t.customerName || "زبون غير مسجل"}</span>
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-col gap-0.5">
+                        {t.services.length ? t.services.map((s, si) => (
+                          <div key={si} className="flex items-center gap-1.5">
+                            <Scissors className="w-3 h-3 text-primary flex-shrink-0" />
+                            <span className="text-xs">{s.serviceNameAr}</span>
+                            <span className="text-xs text-muted-foreground">({s.price.toFixed(2)} د)</span>
+                          </div>
+                        )) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <span className="font-bold text-chart-2">{t.servicesTotal.toFixed(2)}</span>
+                      <span className="text-xs text-muted-foreground mr-1">دينار</span>
+                    </td>
+                    <td className="p-3">
+                      <div>
+                        <span className="font-bold text-primary">{t.commissionEarned.toFixed(2)}</span>
+                        <span className="text-xs text-muted-foreground mr-1">دينار</span>
+                        <span className="text-xs text-muted-foreground block">({t.commission}%)</span>
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-1">
+                        {t.paymentMethod === "cash" ? (
+                          <><Banknote className="w-3.5 h-3.5 text-chart-2" /><span className="text-xs">نقد</span></>
+                        ) : (
+                          <><CreditCard className="w-3.5 h-3.5 text-blue-500" /><span className="text-xs">بطاقة</span></>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3 text-muted-foreground whitespace-nowrap">
+                      <div className="text-xs">{formatDate(t.createdAt)}</div>
+                      <div className="text-xs font-mono">{formatTime(t.createdAt)}</div>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6} className="p-10 text-center text-muted-foreground">
+                      لا توجد معاملات في هذه الفترة
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {txns.length > 0 && (
+                <tfoot>
+                  <tr className="border-t bg-muted/20">
+                    <td className="p-3 font-bold" colSpan={2}>الإجمالي</td>
+                    <td className="p-3 font-bold text-chart-2">
+                      {txns.reduce((s, t) => s + t.servicesTotal, 0).toFixed(2)} دينار
+                    </td>
+                    <td className="p-3 font-bold text-primary">
+                      {txns.reduce((s, t) => s + t.commissionEarned, 0).toFixed(2)} دينار
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </Card>
+      </div>
 
       <div className="flex items-center justify-between gap-4 mb-4">
         <h2 className="text-lg font-bold">سجل السحبات</h2>
