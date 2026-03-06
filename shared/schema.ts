@@ -16,6 +16,8 @@ export const barbers = pgTable("barbers", {
   name: text("name").notNull(),
   commission: real("commission").notNull().default(50),
   active: boolean("active").notNull().default(true),
+  phone: text("phone"),
+  notes: text("notes"),
 });
 
 export const bookings = pgTable("bookings", {
@@ -79,6 +81,30 @@ export const galleryImages = pgTable("gallery_images", {
   caption: text("caption"),
 });
 
+export const barberWithdrawals = pgTable("barber_withdrawals", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  barberId: integer("barber_id").notNull(),
+  amount: real("amount").notNull(),
+  date: text("date").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const staffUsers = pgTable("staff_users", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: text("name").notNull(),
+  username: text("username").notNull().unique(),
+  pin: text("pin").notNull(),
+  role: text("role").notNull().default("receptionist"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const salonSettings = pgTable("salon_settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+});
+
 export const insertServiceSchema = createInsertSchema(services);
 export const insertBarberSchema = createInsertSchema(barbers);
 export const insertBookingSchema = createInsertSchema(bookings);
@@ -88,6 +114,9 @@ export const insertTransactionItemSchema = createInsertSchema(transactionItems);
 export const insertTransactionProductSchema = createInsertSchema(transactionProducts);
 export const insertExpenseSchema = createInsertSchema(expenses);
 export const insertGalleryImageSchema = createInsertSchema(galleryImages);
+export const insertBarberWithdrawalSchema = createInsertSchema(barberWithdrawals);
+export const insertStaffUserSchema = createInsertSchema(staffUsers);
+export const insertSalonSettingSchema = createInsertSchema(salonSettings);
 
 export type Service = typeof services.$inferSelect;
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -107,3 +136,9 @@ export type Expense = typeof expenses.$inferSelect;
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type GalleryImage = typeof galleryImages.$inferSelect;
 export type InsertGalleryImage = z.infer<typeof insertGalleryImageSchema>;
+export type BarberWithdrawal = typeof barberWithdrawals.$inferSelect;
+export type InsertBarberWithdrawal = z.infer<typeof insertBarberWithdrawalSchema>;
+export type StaffUser = typeof staffUsers.$inferSelect;
+export type InsertStaffUser = z.infer<typeof insertStaffUserSchema>;
+export type SalonSetting = typeof salonSettings.$inferSelect;
+export type InsertSalonSetting = z.infer<typeof insertSalonSettingSchema>;

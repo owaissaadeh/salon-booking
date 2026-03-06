@@ -1,10 +1,9 @@
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
-import pg from "pg";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { db } from "./db";
 import {
   services, barbers, bookings, products, transactions,
   transactionItems, transactionProducts, expenses, galleryImages,
+  barberWithdrawals, staffUsers, salonSettings,
   type Service, type InsertService,
   type Barber, type InsertBarber,
   type Booking, type InsertBooking,
@@ -14,6 +13,9 @@ import {
   type TransactionProduct, type InsertTransactionProduct,
   type Expense, type InsertExpense,
   type GalleryImage, type InsertGalleryImage,
+  type BarberWithdrawal, type InsertBarberWithdrawal,
+  type StaffUser, type InsertStaffUser,
+  type SalonSetting,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -23,6 +25,7 @@ export interface IStorage {
   deleteService(id: number): Promise<void>;
 
   getBarbers(): Promise<Barber[]>;
+  getBarberById(id: number): Promise<Barber | undefined>;
   createBarber(b: InsertBarber): Promise<Barber>;
   updateBarber(id: number, b: Partial<InsertBarber>): Promise<Barber | undefined>;
   deleteBarber(id: number): Promise<void>;
@@ -36,21 +39,22 @@ export interface IStorage {
   createProduct(p: InsertProduct): Promise<Product>;
   updateProduct(id: number, p: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(id: number): Promise<void>;
-  decrementStock(productId: number, quantity: number): Promise<void>;
-
-  createTransaction(t: InsertTransaction): Promise<Transaction>;
-  getTransactionsByDateRange(from: string, to: string): Promise<Transaction[]>;
-  getTodayTransactions(): Promise<(Transaction & { barberName: string })[]>;
 
   createFullTransaction(
     transData: InsertTransaction,
     items: { serviceId: number; price: number }[],
     prodItems: { productId: number; quantity: number; price: number }[]
   ): Promise<Transaction>;
+  createTransaction(t: InsertTransaction): Promise<Transaction>;
+  getTransactionsByDateRange(from: string, to: string): Promise<Transaction[]>;
+  getTodayTransactions(): Promise<(Transaction & { barberName: string })[]>;
+  getBarberTransactionsByDateRange(barberId: number, from: string, to: string): Promise<Transaction[]>;
+
   createTransactionItem(item: InsertTransactionItem): Promise<TransactionItem>;
   createTransactionProduct(item: InsertTransactionProduct): Promise<TransactionProduct>;
   getTransactionItemsByDateRange(from: string, to: string): Promise<(TransactionItem & { barberName: string; barberCommission: number })[]>;
   getTransactionProductsByDateRange(from: string, to: string): Promise<(TransactionProduct & { productName: string })[]>;
+  getBarberTransactionItemsByDateRange(barberId: number, from: string, to: string): Promise<TransactionItem[]>;
 
   getExpenses(): Promise<Expense[]>;
   getExpensesByDateRange(from: string, to: string): Promise<Expense[]>;
@@ -60,6 +64,20 @@ export interface IStorage {
   getGalleryImages(): Promise<GalleryImage[]>;
   createGalleryImage(g: InsertGalleryImage): Promise<GalleryImage>;
   deleteGalleryImage(id: number): Promise<void>;
+
+  getBarberWithdrawals(barberId?: number): Promise<BarberWithdrawal[]>;
+  createBarberWithdrawal(w: InsertBarberWithdrawal): Promise<BarberWithdrawal>;
+  deleteBarberWithdrawal(id: number): Promise<void>;
+
+  getStaffUsers(): Promise<StaffUser[]>;
+  getStaffUserByUsername(username: string): Promise<StaffUser | undefined>;
+  createStaffUser(u: InsertStaffUser): Promise<StaffUser>;
+  updateStaffUser(id: number, u: Partial<InsertStaffUser>): Promise<StaffUser | undefined>;
+  deleteStaffUser(id: number): Promise<void>;
+
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string): Promise<void>;
+  getAllSettings(): Promise<Record<string, string>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -81,6 +99,10 @@ export class DatabaseStorage implements IStorage {
   async getBarbers(): Promise<Barber[]> {
     return db.select().from(barbers);
   }
+  async getBarberById(id: number): Promise<Barber | undefined> {
+    const [b] = await db.select().from(barbers).where(eq(barbers.id, id));
+    return b;
+  }
   async createBarber(b: InsertBarber): Promise<Barber> {
     const [result] = await db.insert(barbers).values(b).returning();
     return result;
@@ -99,18 +121,15 @@ export class DatabaseStorage implements IStorage {
       .from(bookings)
       .leftJoin(services, eq(bookings.serviceId, services.id))
       .orderBy(desc(bookings.createdAt));
-    return rows.map(r => ({ ...r.booking, serviceName: r.serviceName || "Unknown" }));
+    return rows.map(r => ({ ...r.booking, serviceName: r.serviceName || "غير محدد" }));
   }
-
   async getBookingsByDate(date: string): Promise<Booking[]> {
     return db.select().from(bookings).where(eq(bookings.date, date));
   }
-
   async createBooking(b: InsertBooking): Promise<Booking> {
     const [result] = await db.insert(bookings).values(b).returning();
     return result;
   }
-
   async updateBookingStatus(id: number, status: string): Promise<void> {
     await db.update(bookings).set({ status }).where(eq(bookings.id, id));
   }
@@ -129,9 +148,6 @@ export class DatabaseStorage implements IStorage {
   async deleteProduct(id: number): Promise<void> {
     await db.delete(products).where(eq(products.id, id));
   }
-  async decrementStock(productId: number, quantity: number): Promise<void> {
-    await db.update(products).set({ stock: sql`${products.stock} - ${quantity}` }).where(eq(products.id, productId));
-  }
 
   async createFullTransaction(
     transData: InsertTransaction,
@@ -140,33 +156,26 @@ export class DatabaseStorage implements IStorage {
   ): Promise<Transaction> {
     return await db.transaction(async (tx) => {
       const [transaction] = await tx.insert(transactions).values(transData).returning();
-
       for (const item of items) {
         await tx.insert(transactionItems).values({ ...item, transactionId: transaction.id });
       }
-
       for (const pItem of prodItems) {
         await tx.insert(transactionProducts).values({ ...pItem, transactionId: transaction.id });
         await tx.update(products).set({ stock: sql`${products.stock} - ${pItem.quantity}` }).where(eq(products.id, pItem.productId));
       }
-
       return transaction;
     });
   }
-
   async createTransaction(t: InsertTransaction): Promise<Transaction> {
     const [result] = await db.insert(transactions).values(t).returning();
     return result;
   }
-
   async getTransactionsByDateRange(from: string, to: string): Promise<Transaction[]> {
-    return db.select().from(transactions)
-      .where(and(
-        gte(transactions.createdAt, new Date(from + "T00:00:00")),
-        lte(transactions.createdAt, new Date(to + "T23:59:59"))
-      ));
+    return db.select().from(transactions).where(and(
+      gte(transactions.createdAt, new Date(from + "T00:00:00")),
+      lte(transactions.createdAt, new Date(to + "T23:59:59"))
+    ));
   }
-
   async getTodayTransactions(): Promise<(Transaction & { barberName: string })[]> {
     const today = new Date().toISOString().split("T")[0];
     const rows = await db
@@ -178,7 +187,14 @@ export class DatabaseStorage implements IStorage {
         lte(transactions.createdAt, new Date(today + "T23:59:59"))
       ))
       .orderBy(desc(transactions.createdAt));
-    return rows.map(r => ({ ...r.transaction, barberName: r.barberName || "Unknown" }));
+    return rows.map(r => ({ ...r.transaction, barberName: r.barberName || "غير محدد" }));
+  }
+  async getBarberTransactionsByDateRange(barberId: number, from: string, to: string): Promise<Transaction[]> {
+    return db.select().from(transactions).where(and(
+      eq(transactions.barberId, barberId),
+      gte(transactions.createdAt, new Date(from + "T00:00:00")),
+      lte(transactions.createdAt, new Date(to + "T23:59:59"))
+    ));
   }
 
   async createTransactionItem(item: InsertTransactionItem): Promise<TransactionItem> {
@@ -189,14 +205,9 @@ export class DatabaseStorage implements IStorage {
     const [result] = await db.insert(transactionProducts).values(item).returning();
     return result;
   }
-
   async getTransactionItemsByDateRange(from: string, to: string): Promise<(TransactionItem & { barberName: string; barberCommission: number })[]> {
     const rows = await db
-      .select({
-        item: transactionItems,
-        barberName: barbers.name,
-        barberCommission: barbers.commission,
-      })
+      .select({ item: transactionItems, barberName: barbers.name, barberCommission: barbers.commission })
       .from(transactionItems)
       .innerJoin(transactions, eq(transactionItems.transactionId, transactions.id))
       .innerJoin(barbers, eq(transactions.barberId, barbers.id))
@@ -204,13 +215,8 @@ export class DatabaseStorage implements IStorage {
         gte(transactions.createdAt, new Date(from + "T00:00:00")),
         lte(transactions.createdAt, new Date(to + "T23:59:59"))
       ));
-    return rows.map(r => ({
-      ...r.item,
-      barberName: r.barberName || "Unknown",
-      barberCommission: r.barberCommission || 0,
-    }));
+    return rows.map(r => ({ ...r.item, barberName: r.barberName || "غير محدد", barberCommission: r.barberCommission || 0 }));
   }
-
   async getTransactionProductsByDateRange(from: string, to: string): Promise<(TransactionProduct & { productName: string })[]> {
     const rows = await db
       .select({ tp: transactionProducts, productName: products.name })
@@ -221,7 +227,19 @@ export class DatabaseStorage implements IStorage {
         gte(transactions.createdAt, new Date(from + "T00:00:00")),
         lte(transactions.createdAt, new Date(to + "T23:59:59"))
       ));
-    return rows.map(r => ({ ...r.tp, productName: r.productName || "Unknown" }));
+    return rows.map(r => ({ ...r.tp, productName: r.productName || "غير محدد" }));
+  }
+  async getBarberTransactionItemsByDateRange(barberId: number, from: string, to: string): Promise<TransactionItem[]> {
+    const rows = await db
+      .select({ item: transactionItems })
+      .from(transactionItems)
+      .innerJoin(transactions, eq(transactionItems.transactionId, transactions.id))
+      .where(and(
+        eq(transactions.barberId, barberId),
+        gte(transactions.createdAt, new Date(from + "T00:00:00")),
+        lte(transactions.createdAt, new Date(to + "T23:59:59"))
+      ));
+    return rows.map(r => r.item);
   }
 
   async getExpenses(): Promise<Expense[]> {
@@ -247,6 +265,54 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteGalleryImage(id: number): Promise<void> {
     await db.delete(galleryImages).where(eq(galleryImages.id, id));
+  }
+
+  async getBarberWithdrawals(barberId?: number): Promise<BarberWithdrawal[]> {
+    if (barberId) {
+      return db.select().from(barberWithdrawals).where(eq(barberWithdrawals.barberId, barberId)).orderBy(desc(barberWithdrawals.createdAt));
+    }
+    return db.select().from(barberWithdrawals).orderBy(desc(barberWithdrawals.createdAt));
+  }
+  async createBarberWithdrawal(w: InsertBarberWithdrawal): Promise<BarberWithdrawal> {
+    const [result] = await db.insert(barberWithdrawals).values(w).returning();
+    return result;
+  }
+  async deleteBarberWithdrawal(id: number): Promise<void> {
+    await db.delete(barberWithdrawals).where(eq(barberWithdrawals.id, id));
+  }
+
+  async getStaffUsers(): Promise<StaffUser[]> {
+    return db.select().from(staffUsers).orderBy(staffUsers.name);
+  }
+  async getStaffUserByUsername(username: string): Promise<StaffUser | undefined> {
+    const [u] = await db.select().from(staffUsers).where(eq(staffUsers.username, username));
+    return u;
+  }
+  async createStaffUser(u: InsertStaffUser): Promise<StaffUser> {
+    const [result] = await db.insert(staffUsers).values(u).returning();
+    return result;
+  }
+  async updateStaffUser(id: number, u: Partial<InsertStaffUser>): Promise<StaffUser | undefined> {
+    const [result] = await db.update(staffUsers).set(u).where(eq(staffUsers.id, id)).returning();
+    return result;
+  }
+  async deleteStaffUser(id: number): Promise<void> {
+    await db.delete(staffUsers).where(eq(staffUsers.id, id));
+  }
+
+  async getSetting(key: string): Promise<string | null> {
+    const [row] = await db.select().from(salonSettings).where(eq(salonSettings.key, key));
+    return row?.value ?? null;
+  }
+  async setSetting(key: string, value: string): Promise<void> {
+    await db
+      .insert(salonSettings)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: salonSettings.key, set: { value } });
+  }
+  async getAllSettings(): Promise<Record<string, string>> {
+    const rows = await db.select().from(salonSettings);
+    return Object.fromEntries(rows.map(r => [r.key, r.value ?? ""]));
   }
 }
 

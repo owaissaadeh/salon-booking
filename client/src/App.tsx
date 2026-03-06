@@ -11,10 +11,13 @@ import BookingsPage from "@/pages/admin/bookings";
 import POSPage from "@/pages/admin/pos";
 import ServicesPage from "@/pages/admin/services-page";
 import BarbersPage from "@/pages/admin/barbers";
-import ProductsPage from "@/pages/admin/products-page";
+import ProductsPage from "@/pages/admin/products";
 import ExpensesPage from "@/pages/admin/expenses";
 import ReportsPage from "@/pages/admin/reports";
 import GalleryPage from "@/pages/admin/gallery-page";
+import StaffPage from "@/pages/admin/staff";
+import BarberProfilePage from "@/pages/admin/barber-profile";
+import SettingsPage from "@/pages/admin/settings";
 
 function AdminRoute({ component: Component }: { component: React.ComponentType }) {
   return (
@@ -33,10 +36,13 @@ function Router() {
       <Route path="/admin/pos">{() => <AdminRoute component={POSPage} />}</Route>
       <Route path="/admin/services">{() => <AdminRoute component={ServicesPage} />}</Route>
       <Route path="/admin/barbers">{() => <AdminRoute component={BarbersPage} />}</Route>
+      <Route path="/admin/barbers/:id">{() => <AdminLayout><BarberProfilePage /></AdminLayout>}</Route>
       <Route path="/admin/products">{() => <AdminRoute component={ProductsPage} />}</Route>
       <Route path="/admin/expenses">{() => <AdminRoute component={ExpensesPage} />}</Route>
       <Route path="/admin/reports">{() => <AdminRoute component={ReportsPage} />}</Route>
       <Route path="/admin/gallery">{() => <AdminRoute component={GalleryPage} />}</Route>
+      <Route path="/admin/staff">{() => <AdminRoute component={StaffPage} />}</Route>
+      <Route path="/admin/settings">{() => <AdminRoute component={SettingsPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );

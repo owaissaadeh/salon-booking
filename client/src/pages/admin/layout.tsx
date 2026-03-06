@@ -1,38 +1,51 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { 
+import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger
 } from "@/components/ui/sidebar";
-import { 
-  LayoutDashboard, CalendarCheck, Scissors, Users, Package, Receipt, 
-  BarChart3, Image, DollarSign
-} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Scissors, LayoutDashboard, CalendarCheck, Receipt, Settings2, Users, Package, BarChart3, Image, DollarSign, UserCog } from "lucide-react";
 
 const menuItems = [
-  { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
-  { title: "Bookings", url: "/admin/bookings", icon: CalendarCheck },
-  { title: "POS", url: "/admin/pos", icon: Receipt },
-  { title: "Services", url: "/admin/services", icon: Scissors },
-  { title: "Barbers", url: "/admin/barbers", icon: Users },
-  { title: "Products", url: "/admin/products", icon: Package },
-  { title: "Expenses", url: "/admin/expenses", icon: DollarSign },
-  { title: "Reports", url: "/admin/reports", icon: BarChart3 },
-  { title: "Gallery", url: "/admin/gallery", icon: Image },
+  { title: "لوحة التحكم", url: "/admin", icon: LayoutDashboard },
+  { title: "الحجوزات", url: "/admin/bookings", icon: CalendarCheck },
+  { title: "POS | نقطة البيع", url: "/admin/pos", icon: Receipt },
+  { title: "الخدمات", url: "/admin/services", icon: Scissors },
+  { title: "الحلاقون", url: "/admin/barbers", icon: Users },
+  { title: "المنتجات", url: "/admin/products", icon: Package },
+  { title: "المصاريف", url: "/admin/expenses", icon: DollarSign },
+  { title: "التقارير", url: "/admin/reports", icon: BarChart3 },
+  { title: "الصور", url: "/admin/gallery", icon: Image },
+  { title: "الموظفون", url: "/admin/staff", icon: UserCog },
+  { title: "الإعدادات", url: "/admin/settings", icon: Settings2 },
 ];
 
 function AppSidebar() {
   const [location] = useLocation();
+  const { data: settings = {} } = useQuery<Record<string, string>>({ queryKey: ["/api/settings"] });
+  const logoUrl = settings?.logo_url;
+
   return (
     <Sidebar>
       <SidebarContent>
         <div className="p-4 border-b border-sidebar-border">
-          <Link href="/" className="flex items-center gap-2">
-            <Scissors className="w-6 h-6 text-primary" />
-            <span className="font-bold text-lg">Salon Pro</span>
-          </Link>
+          <div className="flex items-center gap-3">
+            {logoUrl ? (
+              <img src={logoUrl} alt="شعار" className="h-9 w-9 object-contain rounded-md" />
+            ) : (
+              <div className="w-9 h-9 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
+                <Scissors className="w-4 h-4 text-primary-foreground" />
+              </div>
+            )}
+            <div>
+              <p className="font-black text-base leading-tight">عدنان باشا</p>
+              <p className="text-xs text-muted-foreground">لوحة الإدارة</p>
+            </div>
+          </div>
         </div>
         <SidebarGroup>
-          <SidebarGroupLabel>Management</SidebarGroupLabel>
+          <SidebarGroupLabel>القائمة الرئيسية</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map(item => (
@@ -57,12 +70,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const style = { "--sidebar-width": "16rem", "--sidebar-width-icon": "3rem" };
   return (
     <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
+      <div className="flex h-screen w-full" style={{ direction: "rtl" }}>
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
-          <header className="flex items-center gap-2 p-3 border-b bg-background sticky top-0 z-30">
+          <header className="flex items-center gap-3 p-3 border-b bg-background sticky top-0 z-30">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <span className="text-sm font-medium text-muted-foreground">Admin Dashboard</span>
+            <Link href="/" className="text-xs text-muted-foreground">← العودة للموقع</Link>
           </header>
           <main className="flex-1 overflow-auto p-4 md:p-6 bg-background">
             {children}

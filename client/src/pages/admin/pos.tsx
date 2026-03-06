@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Service, Barber, Product } from "@shared/schema";
-import { Scissors, User, Package, CreditCard, Banknote, Trash2, Plus, Minus, ShoppingCart } from "lucide-react";
+import { Scissors, User, Package, CreditCard, Banknote, Trash2, Plus, Minus, ShoppingCart, Check } from "lucide-react";
 
 interface CartItem {
   type: "service" | "product";
@@ -35,35 +35,24 @@ export default function POSPage() {
 
   const addToCart = (type: "service" | "product", id: number, name: string, price: number) => {
     setCart(prev => {
-      const existing = prev.find(item => item.type === type && item.id === id);
-      if (existing) {
-        return prev.map(item =>
-          item.type === type && item.id === id ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
+      const existing = prev.find(i => i.type === type && i.id === id);
+      if (existing) return prev.map(i => i.type === type && i.id === id ? { ...i, quantity: i.quantity + 1 } : i);
       return [...prev, { type, id, name, price, quantity: 1 }];
     });
   };
 
-  const removeFromCart = (type: string, id: number) => {
-    setCart(prev => prev.filter(item => !(item.type === type && item.id === id)));
-  };
-
-  const updateQuantity = (type: string, id: number, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.type === type && item.id === id) {
-        const newQty = item.quantity + delta;
-        return newQty > 0 ? { ...item, quantity: newQty } : item;
-      }
-      return item;
-    }).filter(item => item.quantity > 0));
-  };
+  const removeFromCart = (type: string, id: number) => setCart(prev => prev.filter(i => !(i.type === type && i.id === id)));
+  const updateQty = (type: string, id: number, delta: number) => setCart(prev =>
+    prev.map(i => i.type === type && i.id === id ? { ...i, quantity: Math.max(1, i.quantity + delta) } : i)
+  );
 
   const servicesTotal = cart.filter(i => i.type === "service").reduce((s, i) => s + i.price * i.quantity, 0);
   const productsTotal = cart.filter(i => i.type === "product").reduce((s, i) => s + i.price * i.quantity, 0);
   const total = servicesTotal + productsTotal;
 
-  const hasServices = cart.some(i => i.type === "service");
+  const steps = ["services", "barber", "products", "payment"] as const;
+  const stepLabels = ["الخدمات", "الحلاق", "المنتجات", "الدفع"];
+  const currentIdx = steps.indexOf(step);
 
   const completeSale = useMutation({
     mutationFn: async () => {
@@ -79,57 +68,33 @@ export default function POSPage() {
       });
     },
     onSuccess: () => {
-      toast({ title: "Sale Complete!", description: `Total: ${total.toFixed(2)} SAR` });
-      setCart([]);
-      setSelectedBarber(null);
-      setCustomerName("");
-      setStep("services");
+      toast({ title: "تمت العملية!", description: `المبلغ: ${total.toFixed(2)} دينار` });
+      setCart([]); setSelectedBarber(null); setCustomerName(""); setStep("services");
       queryClient.invalidateQueries({ queryKey: ["/api/stats/today"] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
     },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
+    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
 
-  const canProceed = () => {
-    if (step === "services") return hasServices;
-    if (step === "barber") return selectedBarber !== null;
-    if (step === "products") return true;
-    if (step === "payment") return true;
-    return false;
-  };
-
-  const nextStep = () => {
-    if (step === "services") setStep("barber");
-    else if (step === "barber") setStep("products");
-    else if (step === "products") setStep("payment");
-  };
-
-  const prevStep = () => {
-    if (step === "barber") setStep("services");
-    else if (step === "products") setStep("barber");
-    else if (step === "payment") setStep("products");
-  };
-
-  const steps = ["services", "barber", "products", "payment"] as const;
-  const stepLabels = ["Services", "Barber", "Products", "Payment"];
-  const currentStepIndex = steps.indexOf(step);
+  const canProceed = step === "services" ? cart.some(i => i.type === "service") :
+    step === "barber" ? selectedBarber !== null : true;
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-4">
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2">
+        <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
           {stepLabels.map((label, i) => (
-            <button key={label} onClick={() => {
-              if (i <= currentStepIndex) setStep(steps[i]);
-            }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-                i === currentStepIndex ? "bg-primary text-primary-foreground" :
-                i < currentStepIndex ? "bg-muted text-foreground" : "bg-muted/50 text-muted-foreground"
+            <button key={label} onClick={() => { if (i <= currentIdx) setStep(steps[i]); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
+                i === currentIdx ? "bg-primary text-primary-foreground shadow-md" :
+                i < currentIdx ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
               }`}
-              data-testid={`button-step-${label.toLowerCase()}`}>
-              <span className="w-5 h-5 rounded-full bg-background/20 flex items-center justify-center text-xs">{i + 1}</span>
+              data-testid={`button-step-${label}`}>
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
+                i < currentIdx ? "bg-primary/30" : "bg-background/20"
+              }`}>
+                {i < currentIdx ? <Check className="w-3 h-3" /> : i + 1}
+              </span>
               {label}
             </button>
           ))}
@@ -137,98 +102,121 @@ export default function POSPage() {
 
         <div className="flex-1 overflow-auto">
           {step === "services" && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {activeServices.map(service => {
-                const inCart = cart.find(i => i.type === "service" && i.id === service.id);
-                return (
-                  <button key={service.id} onClick={() => addToCart("service", service.id, service.name, service.price)}
-                    className={`p-4 rounded-md border-2 text-left transition-colors ${
-                      inCart ? "border-primary bg-primary/5" : "border-border bg-card"
-                    }`}
-                    data-testid={`button-pos-service-${service.id}`}>
-                    <Scissors className="w-6 h-6 text-primary mb-2" />
-                    <p className="font-semibold">{service.name}</p>
-                    <p className="text-xs text-muted-foreground">{service.duration} min</p>
-                    <p className="text-lg font-bold text-primary mt-1">{service.price} SAR</p>
-                    {inCart && <Badge className="mt-2">x{inCart.quantity}</Badge>}
-                  </button>
-                );
-              })}
+            <div>
+              <p className="text-sm text-muted-foreground mb-4 font-medium">اضغط على الخدمة لإضافتها</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {activeServices.map(svc => {
+                  const inCart = cart.find(i => i.type === "service" && i.id === svc.id);
+                  return (
+                    <button key={svc.id} onClick={() => addToCart("service", svc.id, svc.nameAr, svc.price)}
+                      className={`p-5 rounded-xl border-2 text-right transition-all ${
+                        inCart ? "border-primary bg-primary/5" : "border-border bg-card"
+                      }`}
+                      data-testid={`button-pos-service-${svc.id}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Scissors className="w-5 h-5 text-primary" />
+                        </div>
+                        {inCart && <Badge className="text-xs">×{inCart.quantity}</Badge>}
+                      </div>
+                      <p className="font-bold text-base">{svc.nameAr}</p>
+                      <p className="text-xs text-muted-foreground mb-2">{svc.duration} دقيقة</p>
+                      <p className="text-lg font-black text-primary">{svc.price} دينار</p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
           {step === "barber" && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {activeBarbers.map(barber => (
-                <button key={barber.id} onClick={() => setSelectedBarber(barber.id)}
-                  className={`p-6 rounded-md border-2 text-center transition-colors ${
-                    selectedBarber === barber.id ? "border-primary bg-primary/5" : "border-border bg-card"
-                  }`}
-                  data-testid={`button-pos-barber-${barber.id}`}>
-                  <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                    <User className="w-7 h-7 text-primary" />
-                  </div>
-                  <p className="font-semibold text-lg">{barber.name}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{barber.commission}% commission</p>
-                </button>
-              ))}
+            <div>
+              <p className="text-sm text-muted-foreground mb-4 font-medium">اختر الحلاق الذي قدّم الخدمة</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {activeBarbers.map(barber => (
+                  <button key={barber.id} onClick={() => setSelectedBarber(barber.id)}
+                    className={`p-6 rounded-xl border-2 text-center transition-all ${
+                      selectedBarber === barber.id ? "border-primary bg-primary/5" : "border-border bg-card"
+                    }`}
+                    data-testid={`button-pos-barber-${barber.id}`}>
+                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                      <User className="w-8 h-8 text-primary" />
+                    </div>
+                    <p className="font-bold text-lg">{barber.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">عمولة {barber.commission}%</p>
+                    {selectedBarber === barber.id && (
+                      <div className="mt-3 flex justify-center">
+                        <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-primary-foreground" />
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {step === "products" && (
             <div>
-              <p className="text-sm text-muted-foreground mb-3">Add any products sold (optional)</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {activeProducts.map(product => {
-                  const inCart = cart.find(i => i.type === "product" && i.id === product.id);
-                  return (
-                    <button key={product.id} onClick={() => addToCart("product", product.id, product.name, product.price)}
-                      className={`p-4 rounded-md border-2 text-left transition-colors ${
-                        inCart ? "border-primary bg-primary/5" : "border-border bg-card"
-                      }`}
-                      data-testid={`button-pos-product-${product.id}`}>
-                      <Package className="w-6 h-6 text-chart-3 mb-2" />
-                      <p className="font-semibold">{product.name}</p>
-                      <p className="text-xs text-muted-foreground">Stock: {product.stock}</p>
-                      <p className="text-lg font-bold text-primary mt-1">{product.price} SAR</p>
-                      {inCart && <Badge className="mt-2">x{inCart.quantity}</Badge>}
-                    </button>
-                  );
-                })}
-                {activeProducts.length === 0 && (
-                  <div className="col-span-full text-center py-12 text-muted-foreground">
-                    No products available
-                  </div>
-                )}
-              </div>
+              <p className="text-sm text-muted-foreground mb-4 font-medium">أضف منتجات تم بيعها (اختياري)</p>
+              {activeProducts.length === 0 ? (
+                <div className="text-center py-16 text-muted-foreground">
+                  <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>لا توجد منتجات متاحة</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {activeProducts.map(product => {
+                    const inCart = cart.find(i => i.type === "product" && i.id === product.id);
+                    return (
+                      <button key={product.id} onClick={() => addToCart("product", product.id, product.name, product.price)}
+                        className={`p-5 rounded-xl border-2 text-right transition-all ${
+                          inCart ? "border-primary bg-primary/5" : "border-border bg-card"
+                        }`}
+                        data-testid={`button-pos-product-${product.id}`}>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="w-10 h-10 rounded-lg bg-chart-3/10 flex items-center justify-center">
+                            <Package className="w-5 h-5 text-chart-3" />
+                          </div>
+                          {inCart && <Badge className="text-xs">×{inCart.quantity}</Badge>}
+                        </div>
+                        <p className="font-bold">{product.name}</p>
+                        <p className="text-xs text-muted-foreground mb-1">المخزون: {product.stock}</p>
+                        <p className="text-lg font-black text-primary">{product.price} دينار</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
           {step === "payment" && (
-            <div className="max-w-md space-y-4">
+            <div className="max-w-sm space-y-5">
               <div>
-                <label className="text-sm font-medium mb-2 block">Customer Name (optional)</label>
+                <label className="text-sm font-semibold mb-2 block">اسم الزبون (اختياري)</label>
                 <Input value={customerName} onChange={e => setCustomerName(e.target.value)}
-                  placeholder="Customer name" data-testid="input-pos-customer" />
+                  placeholder="اسم الزبون" className="h-12" data-testid="input-pos-customer" />
               </div>
               <div>
-                <label className="text-sm font-medium mb-3 block">Payment Method</label>
+                <label className="text-sm font-semibold mb-3 block">طريقة الدفع</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button onClick={() => setPaymentMethod("cash")}
-                    className={`p-6 rounded-md border-2 text-center transition-colors ${
+                    className={`p-6 rounded-xl border-2 text-center transition-all ${
                       paymentMethod === "cash" ? "border-primary bg-primary/5" : "border-border bg-card"
                     }`}
                     data-testid="button-payment-cash">
-                    <Banknote className="w-8 h-8 mx-auto mb-2 text-chart-2" />
-                    <p className="font-semibold">Cash</p>
+                    <Banknote className="w-9 h-9 mx-auto mb-2 text-chart-2" />
+                    <p className="font-bold">نقداً</p>
                   </button>
                   <button onClick={() => setPaymentMethod("card")}
-                    className={`p-6 rounded-md border-2 text-center transition-colors ${
+                    className={`p-6 rounded-xl border-2 text-center transition-all ${
                       paymentMethod === "card" ? "border-primary bg-primary/5" : "border-border bg-card"
                     }`}
                     data-testid="button-payment-card">
-                    <CreditCard className="w-8 h-8 mx-auto mb-2 text-chart-3" />
-                    <p className="font-semibold">Card</p>
+                    <CreditCard className="w-9 h-9 mx-auto mb-2 text-chart-3" />
+                    <p className="font-bold">بطاقة</p>
                   </button>
                 </div>
               </div>
@@ -237,17 +225,17 @@ export default function POSPage() {
         </div>
 
         <div className="flex items-center justify-between gap-3 pt-4 border-t mt-4">
-          <Button variant="outline" onClick={prevStep} disabled={step === "services"} data-testid="button-pos-back">
-            Back
-          </Button>
+          <Button variant="outline" onClick={() => { const i = currentIdx; if (i > 0) setStep(steps[i - 1]); }}
+            disabled={step === "services"} data-testid="button-pos-back">رجوع</Button>
           {step === "payment" ? (
-            <Button size="lg" onClick={() => completeSale.mutate()} disabled={completeSale.isPending || !canProceed()}
-              className="px-8" data-testid="button-pos-complete">
-              {completeSale.isPending ? "Processing..." : `Complete Sale - ${total.toFixed(2)} SAR`}
+            <Button size="lg" onClick={() => completeSale.mutate()}
+              disabled={completeSale.isPending || !selectedBarber || cart.filter(i => i.type === "service").length === 0}
+              className="px-8 font-bold" data-testid="button-pos-complete">
+              {completeSale.isPending ? "جاري المعالجة..." : `إتمام البيع — ${total.toFixed(2)} دينار`}
             </Button>
           ) : (
-            <Button onClick={nextStep} disabled={!canProceed()} data-testid="button-pos-next">
-              Next
+            <Button onClick={() => setStep(steps[currentIdx + 1])} disabled={!canProceed} data-testid="button-pos-next">
+              التالي
             </Button>
           )}
         </div>
@@ -256,23 +244,23 @@ export default function POSPage() {
       <Card className="lg:w-80 p-4 flex flex-col">
         <div className="flex items-center gap-2 mb-4">
           <ShoppingCart className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold">Order Summary</h3>
+          <h3 className="font-bold">ملخص الطلب</h3>
         </div>
         <div className="flex-1 overflow-auto space-y-2">
           {cart.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No items added</p>
+            <p className="text-sm text-muted-foreground text-center py-8">لم يتم إضافة أي عنصر</p>
           ) : cart.map(item => (
-            <div key={`${item.type}-${item.id}`} className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+            <div key={`${item.type}-${item.id}`} className="flex items-center gap-2 p-2.5 bg-muted/40 rounded-lg">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{item.name}</p>
-                <p className="text-xs text-muted-foreground">{(item.price * item.quantity).toFixed(2)} SAR</p>
+                <p className="text-sm font-semibold truncate">{item.name}</p>
+                <p className="text-xs text-muted-foreground">{(item.price * item.quantity).toFixed(2)} دينار</p>
               </div>
               <div className="flex items-center gap-1">
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQuantity(item.type, item.id, -1)}>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQty(item.type, item.id, -1)}>
                   <Minus className="w-3 h-3" />
                 </Button>
-                <span className="text-sm w-5 text-center">{item.quantity}</span>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQuantity(item.type, item.id, 1)}>
+                <span className="text-sm w-4 text-center font-bold">{item.quantity}</span>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQty(item.type, item.id, 1)}>
                   <Plus className="w-3 h-3" />
                 </Button>
                 <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => removeFromCart(item.type, item.id)}>
@@ -285,21 +273,21 @@ export default function POSPage() {
         {selectedBarber && (
           <div className="flex items-center gap-2 py-2 border-t mt-2 pt-2">
             <User className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm">{activeBarbers.find(b => b.id === selectedBarber)?.name}</span>
+            <span className="text-sm font-medium">{activeBarbers.find(b => b.id === selectedBarber)?.name}</span>
           </div>
         )}
-        <div className="border-t mt-2 pt-3 space-y-1">
+        <div className="border-t mt-2 pt-3 space-y-1.5">
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Services</span>
-            <span>{servicesTotal.toFixed(2)} SAR</span>
+            <span className="text-muted-foreground">الخدمات</span>
+            <span>{servicesTotal.toFixed(2)} دينار</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Products</span>
-            <span>{productsTotal.toFixed(2)} SAR</span>
+            <span className="text-muted-foreground">المنتجات</span>
+            <span>{productsTotal.toFixed(2)} دينار</span>
           </div>
-          <div className="flex justify-between font-bold text-lg pt-1">
-            <span>Total</span>
-            <span className="text-primary" data-testid="text-pos-total">{total.toFixed(2)} SAR</span>
+          <div className="flex justify-between font-black text-xl pt-2 border-t">
+            <span>الإجمالي</span>
+            <span className="text-primary" data-testid="text-pos-total">{total.toFixed(2)} دينار</span>
           </div>
         </div>
       </Card>

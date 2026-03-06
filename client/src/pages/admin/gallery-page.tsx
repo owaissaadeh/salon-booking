@@ -16,66 +16,65 @@ export default function GalleryPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ url: "", caption: "" });
 
-  const saveMutation = useMutation({
+  const addMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/gallery", form);
+      await apiRequest("POST", "/api/gallery", { url: form.url, caption: form.caption || null });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/gallery"] });
       setDialogOpen(false);
       setForm({ url: "", caption: "" });
-      toast({ title: "Image added" });
+      toast({ title: "تمت إضافة الصورة" });
     },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/gallery/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/gallery"] }); toast({ title: "Image deleted" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/gallery"] }); toast({ title: "تم حذف الصورة" }); },
   });
 
   return (
     <div>
       <div className="flex items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold" data-testid="text-gallery-title">Gallery</h1>
-        <Button onClick={() => { setForm({ url: "", caption: "" }); setDialogOpen(true); }} data-testid="button-add-image">
-          <Plus className="w-4 h-4 mr-2" />Add Image
-        </Button>
+        <h1 className="text-2xl font-black" data-testid="text-gallery-title">معرض الأعمال</h1>
+        <Button onClick={() => setDialogOpen(true)} data-testid="button-add-image"><Plus className="w-4 h-4 ml-2" />إضافة صورة</Button>
       </div>
-
       {images.length === 0 ? (
-        <Card className="p-12 text-center">
-          <Image className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">No gallery images yet. Add images to showcase your work.</p>
+        <Card className="p-16 text-center">
+          <Image className="w-14 h-14 mx-auto mb-4 text-muted-foreground/30" />
+          <p className="text-muted-foreground">لا توجد صور في المعرض</p>
         </Card>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {images.map(img => (
-            <div key={img.id} className="relative group rounded-md overflow-hidden aspect-square" data-testid={`gallery-item-${img.id}`}>
-              <img src={img.url} alt={img.caption || ""} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Button size="icon" variant="destructive" onClick={() => deleteMutation.mutate(img.id)} data-testid={`button-delete-image-${img.id}`}>
+            <div key={img.id} className="group relative aspect-square rounded-xl overflow-hidden border" data-testid={`gallery-img-${img.id}`}>
+              <img src={img.url} alt={img.caption || "صورة"} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-background/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Button size="icon" variant="destructive" onClick={() => deleteMutation.mutate(img.id)} data-testid={`button-delete-img-${img.id}`}>
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
               {img.caption && (
-                <div className="absolute bottom-0 left-0 right-0 bg-foreground/60 text-background text-xs p-2 truncate">
-                  {img.caption}
-                </div>
+                <div className="absolute bottom-0 inset-x-0 bg-foreground/60 text-background text-xs p-2 font-medium">{img.caption}</div>
               )}
             </div>
           ))}
         </div>
       )}
-
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Gallery Image</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>إضافة صورة</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div><Label>Image URL</Label><Input value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} placeholder="https://..." data-testid="input-image-url" /></div>
-            <div><Label>Caption (optional)</Label><Input value={form.caption} onChange={e => setForm(p => ({ ...p, caption: e.target.value }))} data-testid="input-image-caption" /></div>
-            <Button className="w-full" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !form.url} data-testid="button-save-image">
-              {saveMutation.isPending ? "Saving..." : "Save"}
+            <div><Label>رابط الصورة</Label><Input value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} placeholder="https://..." data-testid="input-image-url" /></div>
+            <div><Label>التعليق (اختياري)</Label><Input value={form.caption} onChange={e => setForm(p => ({ ...p, caption: e.target.value }))} placeholder="وصف الصورة" /></div>
+            {form.url && (
+              <div className="aspect-video rounded-lg overflow-hidden border">
+                <img src={form.url} alt="معاينة" className="w-full h-full object-cover" onError={() => {}} />
+              </div>
+            )}
+            <Button className="w-full" onClick={() => addMutation.mutate()} disabled={addMutation.isPending || !form.url} data-testid="button-save-image">
+              {addMutation.isPending ? "جاري الإضافة..." : "إضافة"}
             </Button>
           </div>
         </DialogContent>

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DollarSign, TrendingUp, Users, Package } from "lucide-react";
+import { TrendingUp, TrendingDown, Scissors, Package, BarChart3 } from "lucide-react";
 
 interface ReportData {
   totalSales: number;
@@ -17,107 +18,111 @@ interface ReportData {
 }
 
 export default function ReportsPage() {
-  const [dateRange, setDateRange] = useState({
-    from: new Date().toISOString().split("T")[0],
-    to: new Date().toISOString().split("T")[0],
-  });
+  const today = new Date().toISOString().split("T")[0];
+  const monthStart = today.substring(0, 7) + "-01";
+  const [from, setFrom] = useState(monthStart);
+  const [to, setTo] = useState(today);
+  const [query, setQuery] = useState({ from: monthStart, to: today });
 
-  const { data: report } = useQuery<ReportData>({
-    queryKey: ["/api/reports", `?from=${dateRange.from}&to=${dateRange.to}`],
+  const { data: report, isLoading } = useQuery<ReportData>({
+    queryKey: ["/api/reports", query.from, query.to],
+    queryFn: () => fetch(`/api/reports?from=${query.from}&to=${query.to}`).then(r => r.json()),
   });
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6" data-testid="text-reports-title">Reports</h1>
-
-      <div className="flex flex-wrap items-end gap-4 mb-6">
-        <div>
-          <Label className="text-xs">From</Label>
-          <Input type="date" value={dateRange.from} onChange={e => setDateRange(p => ({ ...p, from: e.target.value }))} data-testid="input-report-from" />
-        </div>
-        <div>
-          <Label className="text-xs">To</Label>
-          <Input type="date" value={dateRange.to} onChange={e => setDateRange(p => ({ ...p, to: e.target.value }))} data-testid="input-report-to" />
-        </div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-black" data-testid="text-reports-title">التقارير المالية</h1>
+        <p className="text-sm text-muted-foreground">تحليل أداء الصالون</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        {[
-          { label: "Total Sales", value: report?.totalSales, icon: DollarSign, color: "text-primary" },
-          { label: "Services", value: report?.servicesRevenue, icon: TrendingUp, color: "text-chart-2" },
-          { label: "Products", value: report?.productsRevenue, icon: Package, color: "text-chart-3" },
-          { label: "Expenses", value: report?.totalExpenses, icon: DollarSign, color: "text-destructive" },
-          { label: "Net Profit", value: report?.netProfit, icon: TrendingUp, color: "text-chart-2" },
-        ].map((card, i) => (
-          <Card key={i} className="p-4" data-testid={`card-report-${i}`}>
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-xs text-muted-foreground">{card.label}</span>
-              <card.icon className={`w-4 h-4 ${card.color}`} />
-            </div>
-            <p className="text-lg font-bold">{(card.value ?? 0).toFixed(2)} SAR</p>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div>
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Users className="w-5 h-5 text-primary" /> Barber Performance
-          </h2>
-          <Card className="overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Barber</th>
-                  <th className="text-right p-3 font-medium">Revenue</th>
-                  <th className="text-right p-3 font-medium">Rate</th>
-                  <th className="text-right p-3 font-medium">Commission</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report?.barberBreakdown?.length ? report.barberBreakdown.map((b, i) => (
-                  <tr key={i} className="border-b last:border-0" data-testid={`row-barber-report-${i}`}>
-                    <td className="p-3 font-medium">{b.name}</td>
-                    <td className="p-3 text-right">{b.total.toFixed(2)} SAR</td>
-                    <td className="p-3 text-right text-muted-foreground">{b.commission}%</td>
-                    <td className="p-3 text-right font-medium text-primary">{b.commissionAmount.toFixed(2)} SAR</td>
-                  </tr>
-                )) : (
-                  <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">No data</td></tr>
-                )}
-              </tbody>
-            </table>
-          </Card>
+      <Card className="p-4 mb-6">
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <Label className="text-xs mb-1 block">من تاريخ</Label>
+            <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="w-40" data-testid="input-from-date" />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">إلى تاريخ</Label>
+            <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="w-40" data-testid="input-to-date" />
+          </div>
+          <Button onClick={() => setQuery({ from, to })} data-testid="button-generate-report">
+            {isLoading ? "جاري التحليل..." : "إنشاء التقرير"}
+          </Button>
         </div>
+      </Card>
 
-        <div>
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Package className="w-5 h-5 text-chart-3" /> Products Sold
-          </h2>
-          <Card className="overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Product</th>
-                  <th className="text-right p-3 font-medium">Quantity</th>
-                  <th className="text-right p-3 font-medium">Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report?.productsSold?.length ? report.productsSold.map((p, i) => (
-                  <tr key={i} className="border-b last:border-0" data-testid={`row-product-report-${i}`}>
-                    <td className="p-3 font-medium">{p.name}</td>
-                    <td className="p-3 text-right">{p.quantity}</td>
-                    <td className="p-3 text-right font-medium">{p.total.toFixed(2)} SAR</td>
-                  </tr>
-                )) : (
-                  <tr><td colSpan={3} className="p-6 text-center text-muted-foreground">No products sold</td></tr>
-                )}
-              </tbody>
-            </table>
-          </Card>
+      {report && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            {[
+              { label: "إجمالي المبيعات", value: report.totalSales, icon: TrendingUp, color: "text-chart-2", positive: true },
+              { label: "الخدمات", value: report.servicesRevenue, icon: Scissors, color: "text-primary", positive: true },
+              { label: "المنتجات", value: report.productsRevenue, icon: Package, color: "text-chart-3", positive: true },
+              { label: "المصاريف", value: report.totalExpenses, icon: TrendingDown, color: "text-destructive", positive: false },
+              { label: "صافي الربح", value: report.netProfit, icon: BarChart3, color: report.netProfit >= 0 ? "text-chart-2" : "text-destructive", positive: report.netProfit >= 0 },
+            ].map((stat, i) => (
+              <Card key={i} className="p-4" data-testid={`stat-${i}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-muted-foreground">{stat.label}</span>
+                  <stat.icon className={`w-4 h-4 ${stat.color}`} />
+                </div>
+                <p className={`text-xl font-black ${stat.color}`}>{stat.value.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">دينار</p>
+              </Card>
+            ))}
+          </div>
+
+          {report.barberBreakdown.length > 0 && (
+            <Card className="p-5">
+              <h3 className="font-bold text-lg mb-4">أداء الحلاقين</h3>
+              <div className="space-y-3">
+                {report.barberBreakdown.map((b, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-muted/40 rounded-lg" data-testid={`barber-report-${i}`}>
+                    <div>
+                      <p className="font-bold">{b.name}</p>
+                      <p className="text-xs text-muted-foreground">عمولة {b.commission}%</p>
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-primary">{b.total.toFixed(2)} دينار</p>
+                      <p className="text-xs text-muted-foreground">عمولة: {b.commissionAmount.toFixed(2)} دينار</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {report.productsSold.length > 0 && (
+            <Card className="p-5">
+              <h3 className="font-bold text-lg mb-4">المنتجات المباعة</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      {["المنتج", "الكمية المباعة", "الإيراد"].map(h => (
+                        <th key={h} className="text-right pb-2 font-semibold">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.productsSold.map((p, i) => (
+                      <tr key={i} className="border-b last:border-0">
+                        <td className="py-2.5 font-medium">{p.name}</td>
+                        <td className="py-2.5">{p.quantity}</td>
+                        <td className="py-2.5 font-bold text-primary">{p.total.toFixed(2)} دينار</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
         </div>
-      </div>
+      )}
+      {!report && !isLoading && (
+        <div className="text-center py-20 text-muted-foreground">اضغط "إنشاء التقرير" لعرض البيانات</div>
+      )}
     </div>
   );
 }

@@ -9,16 +9,13 @@ export async function registerRoutes(
 
   // Services
   app.get("/api/services", async (_req, res) => {
-    const data = await storage.getServices();
-    res.json(data);
+    res.json(await storage.getServices());
   });
   app.post("/api/services", async (req, res) => {
-    const service = await storage.createService(req.body);
-    res.json(service);
+    res.json(await storage.createService(req.body));
   });
   app.patch("/api/services/:id", async (req, res) => {
-    const service = await storage.updateService(parseInt(req.params.id), req.body);
-    res.json(service);
+    res.json(await storage.updateService(parseInt(req.params.id), req.body));
   });
   app.delete("/api/services/:id", async (req, res) => {
     await storage.deleteService(parseInt(req.params.id));
@@ -27,30 +24,57 @@ export async function registerRoutes(
 
   // Barbers
   app.get("/api/barbers", async (_req, res) => {
-    const data = await storage.getBarbers();
-    res.json(data);
+    res.json(await storage.getBarbers());
   });
   app.post("/api/barbers", async (req, res) => {
-    const barber = await storage.createBarber(req.body);
-    res.json(barber);
+    res.json(await storage.createBarber(req.body));
   });
   app.patch("/api/barbers/:id", async (req, res) => {
-    const barber = await storage.updateBarber(parseInt(req.params.id), req.body);
-    res.json(barber);
+    res.json(await storage.updateBarber(parseInt(req.params.id), req.body));
   });
   app.delete("/api/barbers/:id", async (req, res) => {
     await storage.deleteBarber(parseInt(req.params.id));
     res.json({ ok: true });
   });
 
+  // Barber profile
+  app.get("/api/barbers/:id/profile", async (req, res) => {
+    const barberId = parseInt(req.params.id);
+    const { from, to } = req.query;
+    const fromDate = (from as string) || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const toDate = (to as string) || new Date().toISOString().split("T")[0];
+
+    const barber = await storage.getBarberById(barberId);
+    if (!barber) return res.status(404).json({ error: "غير موجود" });
+
+    const txns = await storage.getBarberTransactionsByDateRange(barberId, fromDate, toDate);
+    const items = await storage.getBarberTransactionItemsByDateRange(barberId, fromDate, toDate);
+    const withdrawals = await storage.getBarberWithdrawals(barberId);
+
+    const servicesRevenue = items.reduce((s, i) => s + i.price, 0);
+    const commissionEarned = (servicesRevenue * barber.commission) / 100;
+    const totalWithdrawn = withdrawals.reduce((s, w) => s + w.amount, 0);
+    const balance = commissionEarned - totalWithdrawn;
+
+    res.json({
+      barber,
+      fromDate,
+      toDate,
+      servicesRevenue,
+      commissionEarned,
+      totalWithdrawn,
+      balance,
+      transactionCount: txns.length,
+      withdrawals,
+    });
+  });
+
   // Bookings
   app.get("/api/bookings", async (_req, res) => {
-    const data = await storage.getBookings();
-    res.json(data);
+    res.json(await storage.getBookings());
   });
   app.post("/api/bookings", async (req, res) => {
-    const booking = await storage.createBooking(req.body);
-    res.json(booking);
+    res.json(await storage.createBooking(req.body));
   });
   app.patch("/api/bookings/:id", async (req, res) => {
     await storage.updateBookingStatus(parseInt(req.params.id), req.body.status);
@@ -59,30 +83,30 @@ export async function registerRoutes(
 
   app.get("/api/bookings/available-slots", async (req, res) => {
     const { serviceId, date, barberId } = req.query;
-    if (!serviceId || !date) return res.status(400).json({ error: "Missing params" });
+    if (!serviceId || !date) return res.status(400).json({ error: "بيانات ناقصة" });
 
     const allServices = await storage.getServices();
     const service = allServices.find(s => s.id === parseInt(serviceId as string));
-    if (!service) return res.status(404).json({ error: "Service not found" });
+    if (!service) return res.status(404).json({ error: "الخدمة غير موجودة" });
 
     const existingBookings = await storage.getBookingsByDate(date as string);
     const activeBookings = existingBookings.filter(b => b.status !== "cancelled");
-
     const allBarbers = await storage.getBarbers();
     const activeBarbers = allBarbers.filter(b => b.active);
     const selectedBarberId = barberId ? parseInt(barberId as string) : null;
 
-    const slots: string[] = [];
     const startHour = 9;
     const endHour = 23;
+    const allSlots: { time: string; available: boolean }[] = [];
 
     for (let h = startHour; h < endHour; h++) {
       for (let m = 0; m < 60; m += 30) {
         const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
         const slotStart = h * 60 + m;
         const slotEnd = slotStart + service.duration;
-
         if (slotEnd > endHour * 60) continue;
+
+        let available = false;
 
         if (selectedBarberId) {
           const conflict = activeBookings.some(b => {
@@ -94,9 +118,9 @@ export async function registerRoutes(
             const bEnd = bStart + bDuration;
             return slotStart < bEnd && slotEnd > bStart;
           });
-          if (!conflict) slots.push(timeStr);
+          available = !conflict;
         } else {
-          const hasAvailableBarber = activeBarbers.some(barber => {
+          available = activeBarbers.some(barber => {
             const conflict = activeBookings.some(b => {
               if (b.barberId && b.barberId !== barber.id) return false;
               const bService = allServices.find(s => s.id === b.serviceId);
@@ -108,33 +132,31 @@ export async function registerRoutes(
             });
             return !conflict;
           });
-          if (hasAvailableBarber) slots.push(timeStr);
         }
+
+        allSlots.push({ time: timeStr, available });
       }
     }
 
-    res.json(slots);
+    res.json(allSlots);
   });
 
   // Products
   app.get("/api/products", async (_req, res) => {
-    const data = await storage.getProducts();
-    res.json(data);
+    res.json(await storage.getProducts());
   });
   app.post("/api/products", async (req, res) => {
-    const product = await storage.createProduct(req.body);
-    res.json(product);
+    res.json(await storage.createProduct(req.body));
   });
   app.patch("/api/products/:id", async (req, res) => {
-    const product = await storage.updateProduct(parseInt(req.params.id), req.body);
-    res.json(product);
+    res.json(await storage.updateProduct(parseInt(req.params.id), req.body));
   });
   app.delete("/api/products/:id", async (req, res) => {
     await storage.deleteProduct(parseInt(req.params.id));
     res.json({ ok: true });
   });
 
-  // Transactions (POS)
+  // Transactions
   app.post("/api/transactions", async (req, res) => {
     try {
       const { items, products: prodItems, ...transData } = req.body;
@@ -145,20 +167,14 @@ export async function registerRoutes(
     }
   });
 
-  // Dashboard stats
+  // Stats
   app.get("/api/stats/today", async (_req, res) => {
     const todayTransactions = await storage.getTodayTransactions();
-    const todaySales = todayTransactions.reduce((s, t) => s + t.totalAmount, 0);
-    const todayServices = todayTransactions.reduce((s, t) => s + t.servicesTotal, 0);
-    const todayProducts = todayTransactions.reduce((s, t) => s + t.productsTotal, 0);
-
-    const allBookings = await storage.getBookings();
-    const pendingBookings = allBookings.filter(b => b.status === "pending");
-
+    const pendingBookings = (await storage.getBookings()).filter(b => b.status === "pending");
     res.json({
-      todaySales,
-      todayServices,
-      todayProducts,
+      todaySales: todayTransactions.reduce((s, t) => s + t.totalAmount, 0),
+      todayServices: todayTransactions.reduce((s, t) => s + t.servicesTotal, 0),
+      todayProducts: todayTransactions.reduce((s, t) => s + t.productsTotal, 0),
       totalBookings: pendingBookings.length,
       recentTransactions: todayTransactions.slice(0, 10),
     });
@@ -167,15 +183,13 @@ export async function registerRoutes(
   // Reports
   app.get("/api/reports", async (req, res) => {
     const { from, to } = req.query;
-    if (!from || !to) return res.status(400).json({ error: "Missing date range" });
+    if (!from || !to) return res.status(400).json({ error: "تواريخ ناقصة" });
 
     const txns = await storage.getTransactionsByDateRange(from as string, to as string);
     const totalSales = txns.reduce((s, t) => s + t.totalAmount, 0);
     const servicesRevenue = txns.reduce((s, t) => s + t.servicesTotal, 0);
     const productsRevenue = txns.reduce((s, t) => s + t.productsTotal, 0);
-
-    const expensesList = await storage.getExpensesByDateRange(from as string, to as string);
-    const totalExpenses = expensesList.reduce((s, e) => s + e.amount, 0);
+    const totalExpenses = (await storage.getExpensesByDateRange(from as string, to as string)).reduce((s, e) => s + e.amount, 0);
 
     const tItems = await storage.getTransactionItemsByDateRange(from as string, to as string);
     const barberMap = new Map<string, { total: number; commission: number }>();
@@ -184,12 +198,6 @@ export async function registerRoutes(
       existing.total += item.price;
       barberMap.set(item.barberName, existing);
     }
-    const barberBreakdown = Array.from(barberMap.entries()).map(([name, data]) => ({
-      name,
-      total: data.total,
-      commission: data.commission,
-      commissionAmount: (data.total * data.commission) / 100,
-    }));
 
     const tProducts = await storage.getTransactionProductsByDateRange(from as string, to as string);
     const productMap = new Map<string, { quantity: number; total: number }>();
@@ -199,11 +207,6 @@ export async function registerRoutes(
       existing.total += p.price;
       productMap.set(p.productName, existing);
     }
-    const productsSold = Array.from(productMap.entries()).map(([name, data]) => ({
-      name,
-      quantity: data.quantity,
-      total: data.total,
-    }));
 
     res.json({
       totalSales,
@@ -211,20 +214,21 @@ export async function registerRoutes(
       productsRevenue,
       totalExpenses,
       netProfit: totalSales - totalExpenses,
-      barberBreakdown,
-      productsSold,
+      barberBreakdown: Array.from(barberMap.entries()).map(([name, data]) => ({
+        name, total: data.total, commission: data.commission,
+        commissionAmount: (data.total * data.commission) / 100,
+      })),
+      productsSold: Array.from(productMap.entries()).map(([name, data]) => ({ name, ...data })),
       transactionCount: txns.length,
     });
   });
 
   // Expenses
   app.get("/api/expenses", async (_req, res) => {
-    const data = await storage.getExpenses();
-    res.json(data);
+    res.json(await storage.getExpenses());
   });
   app.post("/api/expenses", async (req, res) => {
-    const expense = await storage.createExpense(req.body);
-    res.json(expense);
+    res.json(await storage.createExpense(req.body));
   });
   app.delete("/api/expenses/:id", async (req, res) => {
     await storage.deleteExpense(parseInt(req.params.id));
@@ -233,15 +237,60 @@ export async function registerRoutes(
 
   // Gallery
   app.get("/api/gallery", async (_req, res) => {
-    const data = await storage.getGalleryImages();
-    res.json(data);
+    res.json(await storage.getGalleryImages());
   });
   app.post("/api/gallery", async (req, res) => {
-    const image = await storage.createGalleryImage(req.body);
-    res.json(image);
+    res.json(await storage.createGalleryImage(req.body));
   });
   app.delete("/api/gallery/:id", async (req, res) => {
     await storage.deleteGalleryImage(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Barber withdrawals
+  app.get("/api/barber-withdrawals", async (req, res) => {
+    const barberId = req.query.barberId ? parseInt(req.query.barberId as string) : undefined;
+    res.json(await storage.getBarberWithdrawals(barberId));
+  });
+  app.post("/api/barber-withdrawals", async (req, res) => {
+    res.json(await storage.createBarberWithdrawal(req.body));
+  });
+  app.delete("/api/barber-withdrawals/:id", async (req, res) => {
+    await storage.deleteBarberWithdrawal(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Staff users
+  app.get("/api/staff", async (_req, res) => {
+    const users = await storage.getStaffUsers();
+    res.json(users.map(u => ({ ...u, pin: undefined })));
+  });
+  app.post("/api/staff", async (req, res) => {
+    res.json(await storage.createStaffUser(req.body));
+  });
+  app.patch("/api/staff/:id", async (req, res) => {
+    res.json(await storage.updateStaffUser(parseInt(req.params.id), req.body));
+  });
+  app.delete("/api/staff/:id", async (req, res) => {
+    await storage.deleteStaffUser(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+  app.post("/api/staff/verify-pin", async (req, res) => {
+    const { username, pin } = req.body;
+    const user = await storage.getStaffUserByUsername(username);
+    if (!user || user.pin !== pin || !user.active) {
+      return res.status(401).json({ error: "بيانات خاطئة" });
+    }
+    res.json({ id: user.id, name: user.name, role: user.role });
+  });
+
+  // Settings
+  app.get("/api/settings", async (_req, res) => {
+    res.json(await storage.getAllSettings());
+  });
+  app.post("/api/settings", async (req, res) => {
+    const { key, value } = req.body;
+    await storage.setSetting(key, value);
     res.json({ ok: true });
   });
 
