@@ -110,6 +110,7 @@ export async function registerRoutes(
   async function sendWhatsAppNotification(message: string) {
     try {
       const settings = await storage.getAllSettings();
+      if (settings["notify_whatsapp_enabled"] !== "true") return;
       const phone = settings["notify_whatsapp_phone"];
       const apikey = settings["notify_whatsapp_apikey"];
       if (!phone || !apikey) return;
@@ -121,6 +122,36 @@ export async function registerRoutes(
     }
   }
 
+  async function sendTelegramNotification(message: string) {
+    try {
+      const settings = await storage.getAllSettings();
+      if (settings["notify_telegram_enabled"] !== "true") return;
+      const token = settings["notify_telegram_token"];
+      const chatId = settings["notify_telegram_chatid"];
+      if (!token || !chatId) return;
+      const encoded = encodeURIComponent(message);
+      const url = `https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encoded}`;
+      await fetch(url);
+    } catch (err) {
+      console.error("[notify] Telegram error:", err);
+    }
+  }
+
+  app.post("/api/notify/telegram-test", async (req, res) => {
+    const { token, chatid } = req.body;
+    if (!token || !chatid) return res.status(400).json({ error: "token و chatid مطلوبان" });
+    try {
+      const encoded = encodeURIComponent("✅ اختبار ناجح من نظام عدنان باشا! الإشعارات تعمل بشكل صحيح.");
+      const url = `https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatid}&text=${encoded}`;
+      const r = await fetch(url);
+      const data = await r.json() as { ok: boolean; description?: string };
+      if (!data.ok) return res.status(400).json({ error: data.description || "فشل الإرسال" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "تعذّر الوصول إلى تيليجرام" });
+    }
+  });
+
   // Bookings
   app.get("/api/bookings", async (_req, res) => {
     res.json(await storage.getBookings());
@@ -131,6 +162,7 @@ export async function registerRoutes(
     const svc = allServices.find(s => s.id === booking.serviceId);
     const msg = `حجز جديد في صالون عدنان باشا!\nالاسم: ${booking.visitorName}\nالهاتف: ${booking.phone}\nالخدمة: ${svc?.nameAr || ""}\nالتاريخ: ${booking.date}\nالوقت: ${booking.time}`;
     sendWhatsAppNotification(msg).catch(() => {});
+    sendTelegramNotification(msg).catch(() => {});
     res.json(booking);
   });
   app.patch("/api/bookings/:id", async (req, res) => {
