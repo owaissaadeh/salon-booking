@@ -41,20 +41,20 @@ function AppSidebar() {
     if (settings?.role_permissions) rolePerms = JSON.parse(settings.role_permissions);
   } catch {}
 
-  const isAdmin = user?.role === "admin";
-
   const canAccess = (permKey: string) => {
-    if (isAdmin) return true;
-    const perms = rolePerms[user?.role ?? ""] ?? [];
+    if (!user) return true;
+    if (user.role === "admin") return true;
+    const perms = rolePerms[user.role ?? ""] ?? [];
     return perms.includes(permKey);
   };
 
+  const isAdmin = !user || user.role === "admin";
   const visibleMenu = ALL_MENU.filter(item => canAccess(item.permKey));
   const adminMenu = isAdmin ? ADMIN_ONLY_MENU : [];
 
   return (
-    <Sidebar collapsible="icon" side="right">
-      <SidebarContent>
+    <Sidebar collapsible="icon">
+      <SidebarContent dir="rtl">
         <div className="p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-3 overflow-hidden">
             {logoUrl ? (
@@ -123,22 +123,20 @@ function AppSidebar() {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ direction: "rtl" }}>
-      <SidebarProvider>
-        <SidebarInset>
-          <header className="flex items-center gap-3 p-3 border-b bg-background sticky top-0 z-30 h-14">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <div className="h-4 w-px bg-border" />
-            <Link href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              الموقع الرئيسي
-            </Link>
-          </header>
-          <main className="flex-1 p-4 md:p-6 bg-background min-h-[calc(100vh-3.5rem)] overflow-auto">
-            {children}
-          </main>
-        </SidebarInset>
-        <AppSidebar />
-      </SidebarProvider>
-    </div>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <header className="flex items-center gap-3 p-3 border-b bg-background sticky top-0 z-30 h-14" dir="rtl">
+          <SidebarTrigger data-testid="button-sidebar-toggle" />
+          <div className="h-4 w-px bg-border" />
+          <Link href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+            الموقع الرئيسي
+          </Link>
+        </header>
+        <main className="flex-1 p-4 md:p-6 bg-background min-h-[calc(100vh-3.5rem)] overflow-auto" dir="rtl">
+          {children}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
