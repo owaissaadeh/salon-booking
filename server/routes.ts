@@ -107,12 +107,32 @@ export async function registerRoutes(
     res.json({ barber, fromDate, toDate, servicesRevenue, commissionEarned, totalWithdrawn, balance, transactionCount: txns.length, withdrawals });
   });
 
+  // WhatsApp notification via Callmebot
+  async function sendWhatsAppNotification(message: string) {
+    try {
+      const settings = await storage.getAllSettings();
+      const phone = settings["notify_whatsapp_phone"];
+      const apikey = settings["notify_whatsapp_apikey"];
+      if (!phone || !apikey) return;
+      const encoded = encodeURIComponent(message);
+      const url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encoded}&apikey=${apikey}`;
+      await fetch(url);
+    } catch (err) {
+      console.error("[notify] WhatsApp error:", err);
+    }
+  }
+
   // Bookings
   app.get("/api/bookings", async (_req, res) => {
     res.json(await storage.getBookings());
   });
   app.post("/api/bookings", async (req, res) => {
-    res.json(await storage.createBooking(req.body));
+    const booking = await storage.createBooking(req.body);
+    const allServices = await storage.getServices();
+    const svc = allServices.find(s => s.id === booking.serviceId);
+    const msg = `حجز جديد في صالون عدنان باشا!\nالاسم: ${booking.visitorName}\nالهاتف: ${booking.phone}\nالخدمة: ${svc?.nameAr || ""}\nالتاريخ: ${booking.date}\nالوقت: ${booking.time}`;
+    sendWhatsAppNotification(msg).catch(() => {});
+    res.json(booking);
   });
   app.patch("/api/bookings/:id", async (req, res) => {
     await storage.updateBookingStatus(parseInt(req.params.id), req.body.status);
@@ -301,6 +321,24 @@ export async function registerRoutes(
   app.delete("/api/staff/:id", async (req, res) => {
     await storage.deleteStaffUser(parseInt(req.params.id));
     res.json({ ok: true });
+  });
+
+  // Notification test
+  app.post("/api/notify/test", async (req, res) => {
+    try {
+      const { phone, apikey } = req.body;
+      if (!phone || !apikey) return res.status(400).json({ error: "رقم الهاتف والمفتاح مطلوبان" });
+      const msg = encodeURIComponent("مرحباً من صالون عدنان باشا! الإشعارات تعمل بنجاح ✅");
+      const url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${msg}&apikey=${apikey}`;
+      const r = await fetch(url);
+      const body = await r.text();
+      if (body.toLowerCase().includes("error") || !r.ok) {
+        return res.status(400).json({ error: "فشل الإرسال. تأكد من الرقم والمفتاح." });
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Settings

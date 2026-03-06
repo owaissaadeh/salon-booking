@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Globe, Image as ImageIcon, Phone, MapPin, Clock, Instagram, Twitter, Facebook, MessageCircle } from "lucide-react";
+import { Save, Globe, Image as ImageIcon, Phone, MapPin, Clock, Instagram, Twitter, Facebook, MessageCircle, Bell, Key, Send, CheckCircle } from "lucide-react";
 
 interface SettingSection {
   title: string;
@@ -56,11 +56,16 @@ export default function SettingsPage() {
   const { data: settings = {} } = useQuery<Record<string, string>>({ queryKey: ["/api/settings"] });
   const [changes, setChanges] = useState<Record<string, string>>({});
   const [showLogoText, setShowLogoText] = useState(true);
+  const [notifyPhone, setNotifyPhone] = useState("");
+  const [notifyKey, setNotifyKey] = useState("");
+  const [testSuccess, setTestSuccess] = useState(false);
 
   useEffect(() => {
     if (settings.logo_show_text !== undefined) {
       setShowLogoText(settings.logo_show_text !== "false");
     }
+    if (settings.notify_whatsapp_phone) setNotifyPhone(settings.notify_whatsapp_phone);
+    if (settings.notify_whatsapp_apikey) setNotifyKey(settings.notify_whatsapp_apikey);
   }, [settings]);
 
   const getValue = (key: string) => {
@@ -102,6 +107,31 @@ export default function SettingsPage() {
     const value = getValue(key);
     saveMutation.mutate({ key, value });
   };
+
+  const saveNotifyMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/settings", { key: "notify_whatsapp_phone", value: notifyPhone });
+      await apiRequest("POST", "/api/settings", { key: "notify_whatsapp_apikey", value: notifyKey });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({ title: "تم حفظ إعدادات الإشعارات" });
+    },
+    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
+  });
+
+  const testNotifyMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/notify/test", { phone: notifyPhone, apikey: notifyKey });
+      return res.json();
+    },
+    onSuccess: () => {
+      setTestSuccess(true);
+      setTimeout(() => setTestSuccess(false), 4000);
+      toast({ title: "تم الإرسال!", description: "تحقق من واتساب الخاص بك" });
+    },
+    onError: (err: Error) => toast({ title: "فشل الاختبار", description: err.message, variant: "destructive" }),
+  });
 
   return (
     <div>
@@ -190,6 +220,93 @@ export default function SettingsPage() {
             </div>
           </Card>
         ))}
+
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Bell className="w-4 h-4 text-primary" />
+            <h2 className="font-bold text-base">إشعارات الحجز عبر واتساب</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-5">
+            لما يحجز زبون، يصلك رسالة واتساب تلقائياً على رقمك.
+            يستخدم خدمة Callmebot المجانية.
+          </p>
+
+          <div className="bg-muted/30 rounded-lg p-4 mb-5 border">
+            <p className="text-sm font-semibold mb-2">خطوة واحدة للتفعيل:</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              أرسل رسالة واتساب من رقمك للرقم{" "}
+              <span className="font-bold text-foreground" dir="ltr">+34 644 54 96 60</span>{" "}
+              بالنص:{" "}
+              <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">I allow callmebot to send me messages</span>
+              <br />
+              سيرد عليك برسالة فيها API Key — انسخه وضعه أدناه.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium mb-1.5 flex items-center gap-1.5">
+                <Phone className="w-4 h-4" />
+                رقم الواتساب (بالصيغة الدولية)
+              </Label>
+              <Input
+                value={notifyPhone}
+                onChange={e => setNotifyPhone(e.target.value)}
+                placeholder="+962789240521"
+                dir="ltr"
+                data-testid="input-notify-phone"
+              />
+              <p className="text-xs text-muted-foreground mt-1">مثال: +962789240521</p>
+            </div>
+            <div>
+              <Label className="text-sm font-medium mb-1.5 flex items-center gap-1.5">
+                <Key className="w-4 h-4" />
+                API Key من Callmebot
+              </Label>
+              <Input
+                value={notifyKey}
+                onChange={e => setNotifyKey(e.target.value)}
+                placeholder="123456"
+                dir="ltr"
+                data-testid="input-notify-apikey"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <Button
+                onClick={() => saveNotifyMutation.mutate()}
+                disabled={saveNotifyMutation.isPending || !notifyPhone || !notifyKey}
+                className="flex-1"
+                data-testid="button-save-notify"
+              >
+                <Save className="w-4 h-4 ml-2" />
+                {saveNotifyMutation.isPending ? "جاري الحفظ..." : "حفظ الإعدادات"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => testNotifyMutation.mutate()}
+                disabled={testNotifyMutation.isPending || !notifyPhone || !notifyKey}
+                data-testid="button-test-notify"
+              >
+                {testNotifyMutation.isPending ? (
+                  <Send className="w-4 h-4 ml-2 animate-pulse" />
+                ) : testSuccess ? (
+                  <CheckCircle className="w-4 h-4 ml-2 text-green-500" />
+                ) : (
+                  <Send className="w-4 h-4 ml-2" />
+                )}
+                {testNotifyMutation.isPending ? "جاري الإرسال..." : testSuccess ? "تم الإرسال!" : "اختبار"}
+              </Button>
+            </div>
+
+            {notifyPhone && notifyKey && (
+              <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
+                <CheckCircle className="w-3.5 h-3.5" />
+                الإشعارات مفعّلة — سيصلك واتساب عند كل حجز جديد
+              </div>
+            )}
+          </div>
+        </Card>
       </div>
     </div>
   );
