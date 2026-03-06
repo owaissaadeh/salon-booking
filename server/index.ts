@@ -1,8 +1,18 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seed } from "./seed";
+
+declare module "express-session" {
+  interface SessionData {
+    userId: number;
+    username: string;
+    role: string;
+    name: string;
+  }
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -12,6 +22,19 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "adnan-basha-secret-2024",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false,
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
 app.use(
   express.json({

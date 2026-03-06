@@ -1,11 +1,59 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+
+const PUBLIC_GET_PATHS = [
+  "/services",
+  "/barbers",
+  "/gallery",
+  "/settings",
+  "/bookings/available-slots",
+];
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (req.path.startsWith("/auth/")) return next();
+  if (req.method === "GET" && PUBLIC_GET_PATHS.some(p => req.path.startsWith(p))) return next();
+  if (req.method === "POST" && req.path === "/bookings") return next();
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً" });
+  }
+  next();
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.use("/api", requireAuth);
+
+  // Auth
+  app.get("/api/auth/me", (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "غير مسجل" });
+    res.json({ id: req.session.userId, username: req.session.username, role: req.session.role, name: req.session.name });
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, pin } = req.body;
+      if (!username || !pin) return res.status(400).json({ error: "يجب إدخال اسم المستخدم والرمز السري" });
+      const user = await storage.getStaffUserByUsername(username);
+      if (!user || user.pin !== pin || !user.active) {
+        return res.status(401).json({ error: "اسم المستخدم أو الرمز السري غير صحيح" });
+      }
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      req.session.role = user.role;
+      req.session.name = user.name;
+      res.json({ id: user.id, name: user.name, role: user.role, username: user.username });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy(() => res.json({ ok: true }));
+  });
 
   // Services
   app.get("/api/services", async (_req, res) => {
@@ -56,17 +104,7 @@ export async function registerRoutes(
     const totalWithdrawn = withdrawals.reduce((s, w) => s + w.amount, 0);
     const balance = commissionEarned - totalWithdrawn;
 
-    res.json({
-      barber,
-      fromDate,
-      toDate,
-      servicesRevenue,
-      commissionEarned,
-      totalWithdrawn,
-      balance,
-      transactionCount: txns.length,
-      withdrawals,
-    });
+    res.json({ barber, fromDate, toDate, servicesRevenue, commissionEarned, totalWithdrawn, balance, transactionCount: txns.length, withdrawals });
   });
 
   // Bookings
@@ -107,7 +145,6 @@ export async function registerRoutes(
         if (slotEnd > endHour * 60) continue;
 
         let available = false;
-
         if (selectedBarberId) {
           const conflict = activeBookings.some(b => {
             if (b.barberId && b.barberId !== selectedBarberId) return false;
@@ -133,11 +170,9 @@ export async function registerRoutes(
             return !conflict;
           });
         }
-
         allSlots.push({ time: timeStr, available });
       }
     }
-
     res.json(allSlots);
   });
 
@@ -209,10 +244,7 @@ export async function registerRoutes(
     }
 
     res.json({
-      totalSales,
-      servicesRevenue,
-      productsRevenue,
-      totalExpenses,
+      totalSales, servicesRevenue, productsRevenue, totalExpenses,
       netProfit: totalSales - totalExpenses,
       barberBreakdown: Array.from(barberMap.entries()).map(([name, data]) => ({
         name, total: data.total, commission: data.commission,
@@ -275,14 +307,6 @@ export async function registerRoutes(
     await storage.deleteStaffUser(parseInt(req.params.id));
     res.json({ ok: true });
   });
-  app.post("/api/staff/verify-pin", async (req, res) => {
-    const { username, pin } = req.body;
-    const user = await storage.getStaffUserByUsername(username);
-    if (!user || user.pin !== pin || !user.active) {
-      return res.status(401).json({ error: "بيانات خاطئة" });
-    }
-    res.json({ id: user.id, name: user.name, role: user.role });
-  });
 
   // Settings
   app.get("/api/settings", async (_req, res) => {
@@ -290,7 +314,8 @@ export async function registerRoutes(
   });
   app.post("/api/settings", async (req, res) => {
     const { key, value } = req.body;
-    await storage.setSetting(key, value);
+    if (!key) return res.status(400).json({ error: "المفتاح مطلوب" });
+    await storage.setSetting(key, value ?? "");
     res.json({ ok: true });
   });
 

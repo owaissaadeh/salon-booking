@@ -1,10 +1,11 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
+import LoginPage from "@/pages/admin/login";
 import AdminLayout from "@/pages/admin/layout";
 import DashboardPage from "@/pages/admin/dashboard";
 import BookingsPage from "@/pages/admin/bookings";
@@ -18,8 +19,46 @@ import GalleryPage from "@/pages/admin/gallery-page";
 import StaffPage from "@/pages/admin/staff";
 import BarberProfilePage from "@/pages/admin/barber-profile";
 import SettingsPage from "@/pages/admin/settings";
+import { useAuth } from "@/lib/auth";
+import { useEffect } from "react";
+
+function FaviconSync() {
+  const { data: settings } = useQuery<Record<string, string>>({ queryKey: ["/api/settings"] });
+  useEffect(() => {
+    const url = settings?.favicon_url;
+    if (url) {
+      const link = document.querySelector<HTMLLinkElement>("link[rel='icon']") || document.createElement("link");
+      link.rel = "icon";
+      link.href = url;
+      document.head.appendChild(link);
+    }
+  }, [settings]);
+  return null;
+}
 
 function AdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      setLocation("/admin/login");
+    }
+  }, [isLoading, isAuthenticated, setLocation]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#000" }}>
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-full border-2 animate-spin mx-auto mb-4" style={{ borderColor: "#c09748", borderTopColor: "transparent" }} />
+          <p className="text-sm" style={{ color: "#c09748" }}>جاري التحميل...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) return null;
+
   return (
     <AdminLayout>
       <Component />
@@ -27,16 +66,31 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
   );
 }
 
+function AdminBarberProfileRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) setLocation("/admin/login");
+  }, [isLoading, isAuthenticated, setLocation]);
+
+  if (isLoading) return null;
+  if (!isAuthenticated) return null;
+
+  return <AdminLayout><BarberProfilePage /></AdminLayout>;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
+      <Route path="/admin/login" component={LoginPage} />
       <Route path="/admin">{() => <AdminRoute component={DashboardPage} />}</Route>
       <Route path="/admin/bookings">{() => <AdminRoute component={BookingsPage} />}</Route>
       <Route path="/admin/pos">{() => <AdminRoute component={POSPage} />}</Route>
       <Route path="/admin/services">{() => <AdminRoute component={ServicesPage} />}</Route>
       <Route path="/admin/barbers">{() => <AdminRoute component={BarbersPage} />}</Route>
-      <Route path="/admin/barbers/:id">{() => <AdminLayout><BarberProfilePage /></AdminLayout>}</Route>
+      <Route path="/admin/barbers/:id">{() => <AdminBarberProfileRoute />}</Route>
       <Route path="/admin/products">{() => <AdminRoute component={ProductsPage} />}</Route>
       <Route path="/admin/expenses">{() => <AdminRoute component={ExpensesPage} />}</Route>
       <Route path="/admin/reports">{() => <AdminRoute component={ReportsPage} />}</Route>
@@ -52,6 +106,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <FaviconSync />
         <Toaster />
         <Router />
       </TooltipProvider>
