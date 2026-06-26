@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seed } from "./seed";
+import { testConnection } from "./db";
 
 declare module "express-session" {
   interface SessionData {
@@ -84,6 +85,15 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Health check
+  app.get("/api/health", async (_req, res) => {
+    const dbOk = await testConnection();
+    res.json({ status: dbOk ? "ok" : "db_error", timestamp: new Date().toISOString() });
+  });
+
+  const dbConnected = await testConnection();
+  console.log("DB connection status:", dbConnected);
+
   await registerRoutes(httpServer, app);
   await seed().catch(err => console.error("Seed error:", err));
 
